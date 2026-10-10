@@ -1,0 +1,82 @@
+# ---- Gradle & Kotlin ----
+.gradle/
+.kotlin/
+build/
+**/build/
+local.properties
+kotlin-js-store/
+
+# ---- Android Studio / IntelliJ ----
+.idea/
+*.iml
+*.ipr
+*.iws
+captures/
+.externalNativeBuild/
+.cxx/
+.navigation/
+output-metadata.json
+
+# ---- Python (docs/demo scripts) ----
+__pycache__/
+*.pyc
+.venv/
+
+# ---- Editors and tools ----
+.vscode/
+.fleet/
+# Claude Code's per-user settings
+.claude/settings.local.json
+*.swp
+*~
+
+# ---- Build outputs that end up outside build/ ----
+*.apk
+*.aab
+*.ap_
+*.dex
+mapping.txt
+release/
+# APK signature files that adb install and apksigner leave next to an APK
+*.idsig
+# Checksums and notes the release workflow makes; GitHub keeps the published ones
+*.sha256
+/notes.md
+
+# ---- Logs, crash dumps, profiling ----
+*.log
+*.hprof
+bugreport*.zip
+bugreport*/
+anr_*
+hs_err_pid*
+replay_pid*
+
+# ---- Signing keys and secrets ----
+# app/debug.keystore is the shared debug key and stays in the repo.
+*.jks
+*.keystore
+!app/debug.keystore
+*.p12
+*.pem
+*.key
+keystore.properties
+# Base64 copies of a key, made for GitHub secrets
+*.b64
+*.b64.txt
+*.base64
+signing.properties
+.env
+.env.*
+google-services.json
+
+# ---- OS files ----
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ---- Generated demo data (dates are relative to the day it was made) ----
+docs/demo/memora-demo-backup.json

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#141C2B</color>
+    <color name="w_paper">#1F2A3D</color>
+    <color name="w_ink">#EDE6D8</color>
+    <color name="w_muted">#A9B4C8</color>
+    <color name="w_on_stamp">#1A0E0C</color>
+    <color name="w_birthday">#E0705F</color>
+    <color name="w_anniversary">#A99BE8</color>
+    <color name="w_other">#6FC2A9</color>
+    <color name="w_festival">#E0B456</color>
+    <color name="w_faint">#6E7A90</color>
+    <color name="w_line">#33415A</color>
+    <color name="w_on_ink">#141C2B</color>
+</resources>

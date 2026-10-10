@@ -1,0 +1,9 @@
+# Keep shell scripts runnable on Linux CI, whatever the local line-ending setting.
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.jar binary
+*.keystore binary
+*.jks binary
+*.png binary
+*.ttf binary

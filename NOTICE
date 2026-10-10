@@ -1,0 +1,57 @@
+Memora – birthday & anniversary reminders
+Copyright (C) 2026 smnexstudio
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version. See the LICENSE file.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+
+NAME AND LOGO
+-------------
+"Memora" and the Memora stamp logo are the names and marks of smnexstudio.
+The GPL covers the code, not the right to use the name or logo. If you
+publish a modified version, give it a different name and icon, and don't
+present it as made or endorsed by smnexstudio.
+
+
+THIRD-PARTY SOFTWARE
+--------------------
+Memora includes or links the following. Each keeps its own license.
+
+Fonts (bundled in app/src/main/res/font), SIL Open Font License 1.1,
+full text in licenses/OFL-1.1.txt:
+  - Fraunces   Copyright 2020 The Fraunces Project Authors
+               https://github.com/undercasetype/Fraunces
+  - Caveat     Copyright 2014 The Caveat Project Authors
+               https://github.com/googlefonts/caveat
+  - Work Sans  Copyright 2019 The Work Sans Project Authors
+               https://github.com/weiweihuanghuang/Work-Sans
+
+Libraries, Apache License 2.0, full text in licenses/Apache-2.0.txt:
+  - Android Jetpack (AndroidX): Compose UI, Foundation, Material 3,
+    Activity, Navigation, Lifecycle, Fragment, Biometric, Core
+    Copyright The Android Open Source Project
+    https://developer.android.com/jetpack
+  - Kotlin standard library and kotlinx.coroutines
+    Copyright JetBrains s.r.o. and Kotlin Programming Language contributors
+    https://kotlinlang.org
+
+Astronomy: the lunar-date calculations in logic/Lunar.kt follow the
+low-precision formulas in Jean Meeus, "Astronomical Algorithms"
+(2nd ed., Willmann-Bell, 1998). No code from the book is included.
+
+
+DATA AND SERVICES
+-----------------
+Festival dates are downloaded from Google Calendar's public holiday
+calendars. Memora is not affiliated with or endorsed by Google, and those
+dates remain subject to Google's terms.
+
+WhatsApp is a trademark of WhatsApp LLC. Memora opens WhatsApp, SMS and
+email apps already on the phone to send messages; it is not affiliated
+with or endorsed by WhatsApp LLC or Meta Platforms, Inc.

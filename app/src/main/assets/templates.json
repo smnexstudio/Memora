@@ -1,0 +1,113 @@
+{
+  "templates": {
+    "birthday": {
+      "formal": {
+        "en": [
+          {
+            "text": "Dear {name}, wishing you a very happy birthday and a year filled with good health and success.",
+            "noAge": "Dear {name}, wishing you a very happy birthday and a year filled with good health and success."
+          },
+          {
+            "text": "Happy {ordinal} birthday, {name}. May the year ahead bring you joy and fulfilment.",
+            "noAge": "Happy birthday, {name}. May the year ahead bring you joy and fulfilment."
+          }
+        ]
+      },
+      "fun": {
+        "en": [
+          {
+            "text": "Happy birthday, {name}! 🎉 {age} looks great on you. Let’s celebrate!",
+            "noAge": "Happy birthday, {name}! 🎉 Another year more awesome. Let’s celebrate!"
+          },
+          {
+            "text": "HBD {name}! 🎂 Eat cake, ignore calories, have the best day ever!",
+            "noAge": "HBD {name}! 🎂 Eat cake, ignore calories, have the best day ever!"
+          }
+        ]
+      },
+      "family": {
+        "en": [
+          {
+            "text": "Happy birthday, {name}! ❤️ So lucky to have you in the family. Love you lots.",
+            "noAge": "Happy birthday, {name}! ❤️ So lucky to have you in the family. Love you lots."
+          },
+          {
+            "text": "Many happy returns of the day, {name}! God bless you with health and happiness always.",
+            "noAge": "Many happy returns of the day, {name}! God bless you with health and happiness always."
+          }
+        ]
+      }
+    },
+    "anniversary": {
+      "formal": {
+        "en": [
+          {
+            "text": "Dear {name}, warm wishes on your {ordinal} wedding anniversary. Wishing you many more years of togetherness.",
+            "noAge": "Dear {name}, warm wishes on your wedding anniversary. Wishing you many more years of togetherness."
+          },
+          {
+            "text": "Happy anniversary, {name}. May your bond grow stronger with every year.",
+            "noAge": "Happy anniversary, {name}. May your bond grow stronger with every year."
+          }
+        ]
+      },
+      "fun": {
+        "en": [
+          {
+            "text": "Happy anniversary, {name}! 🥂 {age} years and still not bored of each other. Legends!",
+            "noAge": "Happy anniversary, {name}! 🥂 Still the cutest couple around!"
+          },
+          {
+            "text": "Cheers to you two, {name}! 💑 Here’s to more love, laughs and dinner dates.",
+            "noAge": "Cheers to you two, {name}! 💑 Here’s to more love, laughs and dinner dates."
+          }
+        ]
+      },
+      "family": {
+        "en": [
+          {
+            "text": "Happy anniversary, {name}! ❤️ Your love inspires all of us. God bless you both.",
+            "noAge": "Happy anniversary, {name}! ❤️ Your love inspires all of us. God bless you both."
+          },
+          {
+            "text": "Wishing you both a lifetime of love and happiness, {name}. Happy anniversary!",
+            "noAge": "Wishing you both a lifetime of love and happiness, {name}. Happy anniversary!"
+          }
+        ]
+      }
+    },
+    "other": {
+      "formal": {
+        "en": [
+          {
+            "text": "Dear {name}, warm wishes on this special occasion. Wishing you every success.",
+            "noAge": "Dear {name}, warm wishes on this special occasion. Wishing you every success."
+          }
+        ]
+      },
+      "fun": {
+        "en": [
+          {
+            "text": "Congrats, {name}! 🎉 Big day, bigger celebrations!",
+            "noAge": "Congrats, {name}! 🎉 Big day, bigger celebrations!"
+          }
+        ]
+      },
+      "family": {
+        "en": [
+          {
+            "text": "So happy for you, {name}! ❤️ Wishing you all the best today and always.",
+            "noAge": "So happy for you, {name}! ❤️ Wishing you all the best today and always."
+          }
+        ]
+      }
+    }
+  },
+  "belated": {
+    "en": {
+      "birthday": "Belated happy birthday, {name}! Sorry I missed the day — hope it was a wonderful one.",
+      "anniversary": "Belated happy anniversary, {name}! Sorry I’m late — wishing you both many more happy years.",
+      "other": "Belated wishes, {name}! Sorry I missed the day — hope it was wonderful."
+    }
+  }
+}

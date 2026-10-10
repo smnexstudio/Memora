@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="brand">#23395B</color>
+    <color name="bg">#E6DFD2</color>
+    <color name="w_paper">#FFFDF8</color>
+    <color name="w_ink">#23395B</color>
+    <color name="w_muted">#4A5B78</color>
+    <color name="w_on_stamp">#FFFDF8</color>
+    <color name="w_birthday">#B23A2E</color>
+    <color name="w_anniversary">#5B4E9A</color>
+    <color name="w_other">#2E7060</color>
+    <color name="w_festival">#9A6A00</color>
+    <color name="w_faint">#A69C8A</color>
+    <color name="w_line">#D8CFBF</color>
+    <color name="w_on_ink">#FFFDF8</color>
+</resources>
