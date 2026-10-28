@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui
 
+import com.smnexstudio.memora.logic.Agenda
+import com.smnexstudio.memora.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -30,13 +32,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -66,7 +68,6 @@ import com.smnexstudio.memora.logic.daysUntil
 import com.smnexstudio.memora.logic.eventLabel
 import com.smnexstudio.memora.logic.festivalDate
 import com.smnexstudio.memora.logic.isMilestone
-import com.smnexstudio.memora.logic.occurrencesInMonth
 import com.smnexstudio.memora.logic.ordinal
 import com.smnexstudio.memora.logic.today
 import com.smnexstudio.memora.logic.yearsOn
@@ -118,52 +119,64 @@ fun stampText(e: MemoraEvent, on: LocalDate): String = yearsOn(e, on)?.toString(
 
 // ---- Bottom navigation ----
 
-enum class Tab(val route: String, val label: String, val icon: Ic) {
-    HOME("home", "Home", Ic.HOME),
-    CALENDAR("calendar", "Calendar", Ic.CALENDAR),
-    PEOPLE("people", "People", Ic.PEOPLE),
-    SETTINGS("settings", "Settings", Ic.SETTINGS),
+/** [boardLabel] is the tab's name on the Departures board. */
+enum class Tab(val route: Route, val label: String, val icon: Ic, val boardLabel: String) {
+    HOME(Route.Home, "Home", Ic.HOME, "Board"),
+    CALENDAR(Route.Calendar, "Calendar", Ic.CALENDAR, "Month"),
+    PEOPLE(Route.People, "People", Ic.PEOPLE, "People"),
+    SETTINGS(Route.Settings, "Settings", Ic.SETTINGS, "Settings"),
 }
 
 /** Height of [BottomNav] above the system bar, for list padding. */
 val BOTTOM_NAV_SPACE = 100.dp
 
 @Composable
-fun BottomNav(current: String?, onTab: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
+fun BottomNav(current: Tab?, onTab: (Tab) -> Unit, onAdd: () -> Unit, modifier: Modifier = Modifier) {
     val c = theme.c
-    Column(modifier.fillMaxWidth().background(c.paper)) {
-        DashedDivider()
+    val board = theme.board
+    // Board tab labels are mono capitals, like the column heads above.
+    val label: @Composable (String, Boolean, Modifier) -> Unit = { text, on, m ->
+        if (board) Text(text.uppercase(), m, fontFamily = MonoFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.6.sp, color = if (on) c.stamp else c.muted)
+        else Text(text, m, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold, color = if (on) c.stamp else c.muted)
+    }
+    Column(modifier.fillMaxWidth().background(if (board) c.ground else c.paper)) {
+        if (board) BoardRule() else DashedDivider()
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().height(76.dp).padding(horizontal = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             listOf(Tab.HOME, Tab.CALENDAR, null, Tab.PEOPLE, Tab.SETTINGS).forEach { tab ->
                 if (tab == null) {
-                    // The Add button: a red stamp lifted above the bar.
+                    // The Add button: a red stamp lifted above the bar; on the board, a level amber key.
                     Column(
                         Modifier.weight(1f).clickable(role = Role.Button, onClick = onAdd).semantics { contentDescription = "Add event" },
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Box(
+                        if (board) Box(
+                            Modifier.offset(y = (-12).dp).size(58.dp, 50.dp).clip(RoundedCornerShape(12.dp)).background(c.stamp),
+                            contentAlignment = Alignment.Center,
+                        ) { LineIcon(Ic.PLUS, c.onStamp, size = 26) }
+                        else Box(
                             Modifier.offset(y = (-16).dp).size(60.dp).rotate(-3f).background(c.ground)
                                 .dashedBorder(c.stamp, 2.dp).padding(3.dp).background(c.stamp),
                             contentAlignment = Alignment.Center,
                         ) { LineIcon(Ic.PLUS, c.onStamp, size = 26) }
-                        Text("Add", Modifier.offset(y = (-12).dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = c.stamp)
+                        label("Add", true, Modifier.offset(y = if (board) (-6).dp else (-12).dp))
                     }
                     return@forEach
                 }
-                val on = current == tab.route
+                val on = current == tab
                 Column(
                     Modifier.weight(1f).height(62.dp).clickable(role = Role.Tab) { onTab(tab) }.semantics { selected = on },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(3.dp, Alignment.CenterVertically),
                 ) {
-                    Box(
+                    if (board) LineIcon(tab.icon, if (on) c.stamp else c.muted, size = 23)
+                    else Box(
                         Modifier.size(46.dp, 32.dp).then(if (on) Modifier.background(c.stampSoft).dashedBorder(c.stamp, 1.5.dp) else Modifier),
                         contentAlignment = Alignment.Center,
                     ) { LineIcon(tab.icon, if (on) c.stamp else c.muted, size = 22) }
-                    Text(tab.label, fontSize = 12.sp, fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold, color = if (on) c.stamp else c.muted)
+                    label(if (board) tab.boardLabel else tab.label, on, Modifier)
                 }
             }
         }
@@ -192,19 +205,22 @@ fun StampRow(
     badge: (@Composable () -> Unit)? = null,
 ) {
     val c = theme.c
+    val board = theme.board
     Row(
-        modifier.fillMaxWidth().rotate(tilt).paper(c.paper, c.shadow).clickable(role = Role.Button, onClick = onClick)
+        modifier.fillMaxWidth().rotate(if (board) 0f else tilt).paper(c.paper, c.shadow).clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Stamp(stamp, color, filled = filled, fontSize = if (stamp.length > 2) 15 else 18)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // On the board the name is the destination: condensed capitals.
+            if (board) Text(title.uppercase(), fontFamily = DisplayFont, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            else Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, fontSize = 13.sp, color = c.muted, maxLines = 2, overflow = TextOverflow.Ellipsis)
             note?.let { Text(it, fontSize = 12.sp, color = c.muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         }
-        trailing?.let { Handwriting(it, size = 22, bold = true) }
+        trailing?.let { Handwriting(if (board) it.uppercase() else it, size = 22, bold = true) }
         badge?.invoke()
     }
 }
@@ -219,14 +235,14 @@ data class DayMark(val color: Color, val festival: Boolean)
 /** Dots for each day of [month]: one per event (type colour) and a diamond per enabled festival. */
 fun monthMarks(
     t: MemoraTheme,
-    events: List<MemoraEvent>,
+    agenda: Agenda,
     festivalIds: List<String>,
     month: YearMonth,
     people: Boolean = true,
     festivals: Boolean = true,
 ): Map<LocalDate, List<DayMark>> {
     val out = mutableMapOf<LocalDate, MutableList<DayMark>>()
-    if (people) for (e in events) for (d in occurrencesInMonth(e, month)) out.getOrPut(d) { mutableListOf() } += DayMark(t.type(e.type), false)
+    if (people) for ((d, events) in agenda.inMonth(month)) out.getOrPut(d) { mutableListOf() } += events.map { DayMark(t.type(it.type), false) }
     if (festivals) for (f in availableFestivals().filter { it.id in festivalIds }) {
         festivalDate(f, month.year)?.takeIf { YearMonth.from(it) == month }?.let { out.getOrPut(it) { mutableListOf() } += DayMark(t.c.festival, true) }
     }
@@ -264,7 +280,7 @@ fun WeekStrip(marks: (LocalDate) -> List<DayMark>, onDay: (LocalDate) -> Unit) {
             ) {
                 val color = if (isToday) c.stamp else c.ink
                 Text(SHORT_DAYS[d.dayOfWeek.value - 1], fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = color)
-                Text("${d.dayOfMonth}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = color)
+                Text("${d.dayOfMonth}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = color)
                 MarkDots(dm)
             }
         }
@@ -297,7 +313,11 @@ fun MonthGrid(month: YearMonth, marks: Map<LocalDate, List<DayMark>>, selected: 
                     val dm = if (inMonth) marks[d].orEmpty() else emptyList()
                     Column(
                         Modifier.weight(1f).height(52.dp)
-                            .then(if (sel) Modifier.background(c.stamp) else if (isToday) Modifier.dashedBorder(c.stamp, 1.5.dp) else Modifier)
+                            .then(
+                                if (t.board) Modifier.padding(3.dp).clip(RoundedCornerShape(8.dp))
+                                    .then(if (sel) Modifier.background(c.stamp) else if (isToday) Modifier.border(1.5.dp, c.stamp, RoundedCornerShape(8.dp)) else Modifier)
+                                else if (sel) Modifier.background(c.stamp) else if (isToday) Modifier.dashedBorder(c.stamp, 1.5.dp) else Modifier,
+                            )
                             .clickable(role = Role.Button) { onSelect(d) }
                             .semantics {
                                 contentDescription = "${d.dayOfMonth} ${MONTHS[d.monthValue - 1]}" +
@@ -308,6 +328,7 @@ fun MonthGrid(month: YearMonth, marks: Map<LocalDate, List<DayMark>>, selected: 
                     ) {
                         Text(
                             "${d.dayOfMonth}", fontSize = 16.sp, fontWeight = if (sel) FontWeight.Bold else FontWeight.Medium,
+                            fontFamily = if (t.board) MonoFont else null,
                             color = if (sel) c.onStamp else if (inMonth) c.ink else c.faint,
                         )
                         MarkDots(dm, if (sel) c.onStamp else null)
@@ -349,7 +370,7 @@ fun FestivalBanner(f: Festival, date: LocalDate) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(Modifier.size(40.dp, 46.dp).border(1.5.dp, c.festival), contentAlignment = Alignment.Center) {
-            Text("${date.dayOfMonth}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = c.festivalInk)
+            Text("${date.dayOfMonth}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = c.festivalInk)
         }
         Column(Modifier.weight(1f)) {
             Text(if (n == 0) "${f.name} today" else "${f.name} in ${daysLeft(n)}", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.festivalInk)
@@ -360,34 +381,34 @@ fun FestivalBanner(f: Festival, date: LocalDate) {
 
 // ---- Day sheet ----
 
-fun clock(h: Int, m: Int) = "${(h + 11) % 12 + 1}:${m.toString().padStart(2, '0')} ${if (h < 12) "AM" else "PM"}"
+/** Square paper sheets on postcards; rounded top corners on the board. */
+@Composable
+fun sheetShape() = if (theme.board) RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp) else RoundedCornerShape(0.dp)
+
+fun clock(h: Int, m: Int) ="${(h + 11) % 12 + 1}:${m.toString().padStart(2, '0')} ${if (h < 12) "AM" else "PM"}"
 
 /** Everything on one day, as a sheet over the screen. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (String) -> Unit) {
+fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
-    val version by Repo.version.collectAsState()
-    val events = remember(version, date) {
-        Repo.listEvents().filter { e -> occurrencesInMonth(e, YearMonth.from(date)).any { it == date } }.sortedBy { it.name }
-    }
-    val fests = remember(version, date) {
-        val ids = Repo.festivals()
-        availableFestivals().filter { it.id in ids && festivalDate(it, date.year) == date }
-    }
-    val sentByEvent = remember(version, date) { events.associate { e -> e.id to Repo.listHistory(e.id).firstOrNull { it.year == date.year } } }
+    val events = rememberAgenda().on(date)
+    val ids = Prefs.festivals.current
+    val fests = remember(festivalVersion(), ids, date) { availableFestivals().filter { it.id in ids && festivalDate(it, date.year) == date } }
+    val history = historyVersion()
+    val sentByEvent = remember(history, events, date) { events.associate { e -> e.id to Repo.listHistory(e.id).firstOrNull { it.year == date.year } } }
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val n = daysUntil(date)
     val toSend = events.count { sentByEvent[it.id] == null }
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.paperAlt, shape = RoundedCornerShape(0.dp)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = state, containerColor = c.paperAlt, shape = sheetShape()) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 26.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(dayTitle(date), fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = c.ink)
+                    Text(dayTitle(date), fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = c.ink)
                     Text(
                         (when {
                             n == 0 -> "Today"
@@ -410,7 +431,7 @@ fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (String) -> Unit)
                 PaperCard(tilt = if (i % 2 == 0) -0.6f else 0.5f, padding = PaddingValues(14.dp), gap = 12.dp) {
                     Box(Modifier.fillMaxWidth()) {
                         Row(
-                            Modifier.fillMaxWidth().clickable(role = Role.Button) { onDismiss(); navigate("event/${e.id}") },
+                            Modifier.fillMaxWidth().clickable(role = Role.Button) { onDismiss(); navigate(Route.Event(e.id)) },
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Stamp(stampText(e, date), t.type(e.type), filled = n == 0 && sent == null, width = 44.dp, height = 52.dp)
@@ -430,7 +451,7 @@ fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (String) -> Unit)
                     }
                     if (sent == null && n <= 0) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         PostButton(
-                            "Send card", { onDismiss(); navigate("approve/${e.id}?year=${date.year}" + if (n < 0) "&belated=true" else "") },
+                            "Send card", { onDismiss(); navigate(Route.Approve(e.id, year = date.year, belated = n < 0)) },
                             Modifier.weight(1f), height = 44.dp,
                         )
                         PostButton("Skip this year", { Repo.markSent(e.id, date.year, "skipped", null) }, look = Look.OUTLINE, height = 44.dp)
@@ -451,7 +472,7 @@ fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (String) -> Unit)
             }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).dashedBorder(c.ink, 1.5.dp, radius = 4.dp)
-                    .clickable(role = Role.Button) { onDismiss(); navigate("edit?date=$date") },
+                    .clickable(role = Role.Button) { onDismiss(); navigate(Route.Edit.on(date)) },
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
             ) {
@@ -469,15 +490,15 @@ fun DaySheet(date: LocalDate, onDismiss: () -> Unit, navigate: (String) -> Unit)
 @Composable
 fun ReadyWishesSheet(type: EventType, hasYear: Boolean, onPick: (String) -> Unit, onDismiss: () -> Unit, preview: (String) -> String) {
     val c = theme.c
-    var tone by remember { mutableStateOf(Templates.toneFrom(Repo.getSetting("templateTone", "formal"))) }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.paperAlt, shape = RoundedCornerShape(0.dp)) {
+    var tone by remember { mutableStateOf(Templates.toneFrom(Prefs.templateTone.get())) }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = c.paperAlt, shape = sheetShape()) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 26.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             SectionTitle("Ready wishes", size = 22)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Tone.entries.forEach { t -> WeightedChip(t.label, tone == t, { tone = t; Repo.setSetting("templateTone", t.id) }) }
+                Tone.entries.forEach { t -> WeightedChip(t.label, tone == t, { tone = t; Prefs.templateTone.set(t.id) }) }
             }
             Templates.templatesFor(type, tone, hasYear).forEachIndexed { i, text ->
                 PaperCard(tilt = tiltFor(i) / 2, onClick = { onPick(text); onDismiss() }, padding = PaddingValues(14.dp)) {
@@ -556,13 +577,13 @@ fun ContactSuggestions(
 fun CalendarsDialog(onDismiss: () -> Unit) {
     val c = theme.c
     val app = LocalContext.current.applicationContext
-    val current = remember { Repo.calendars() }
+    val current = remember { Prefs.calendars.get() }
     var sel by remember { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = c.paper,
         shape = RoundedCornerShape(4.dp),
-        title = { Text("Holiday calendars", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, color = c.ink) },
+        title = { Text("Holiday calendars", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, color = c.ink) },
         text = {
             Column {
                 Text("Pick up to $MAX_CALENDARS, e.g. your country and a religious calendar.", fontSize = 14.sp, color = c.muted)
@@ -588,7 +609,7 @@ fun CalendarsDialog(onDismiss: () -> Unit) {
             TextButton({
                 onDismiss()
                 if (sel != current) {
-                    Repo.setCalendars(sel)
+                    Prefs.calendars.set(sel)
                     thread { GoogleHolidays.ensure(force = true); Reminders.syncAll(app) }
                 }
             }, enabled = sel.isNotEmpty()) { Text("Save", fontWeight = FontWeight.Bold, color = c.ink) }

@@ -1,5 +1,8 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.historyVersion
+import com.smnexstudio.memora.ui.rememberAgenda
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,7 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,10 +35,9 @@ import com.smnexstudio.memora.data.EventType
 import com.smnexstudio.memora.data.MemoraEvent
 import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.logic.daysUntil
-import com.smnexstudio.memora.logic.nextDate
 import com.smnexstudio.memora.logic.shortDate
 import com.smnexstudio.memora.ui.BoxField
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.IconTap
 import com.smnexstudio.memora.ui.StampRow
@@ -50,12 +51,13 @@ import com.smnexstudio.memora.ui.whatLine
 private val NUMBER_WORDS = listOf("No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten")
 
 @Composable
-fun SearchScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
+fun SearchScreen(onBack: () -> Unit, navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
-    val version by Repo.version.collectAsState()
-    val events = remember(version) { Repo.listEvents() }
-    val notes = remember(version) { Repo.allNotes().groupBy { it.eventId } }
+    val agenda = rememberAgenda()
+    val events = agenda.events
+    val history = historyVersion()
+    val notes = remember(history) { Repo.allNotes().groupBy { it.eventId } }
     var query by rememberSaveable { mutableStateOf("") }
     var type by rememberSaveable { mutableStateOf<String?>(null) }
     val focus = remember { FocusRequester() }
@@ -63,10 +65,10 @@ fun SearchScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
 
     val q = query.trim().lowercase()
     // Each hit carries where it matched, to show under the result.
-    val hits = remember(version, q) {
+    val hits = remember(events, notes, q) {
         if (q.isEmpty()) emptyList() else events.mapNotNull { e -> whyMatch(e, notes[e.id].orEmpty().map { it.text }, q)?.let { e to it } }
     }
-    val shown = hits.filter { type == null || it.first.type.id == type }.map { (e, why) -> Triple(e, nextDate(e), why) }.sortedBy { it.second }
+    val shown = hits.filter { type == null || it.first.type.id == type }.map { (e, why) -> Triple(e, agenda.next(e), why) }.sortedBy { it.second }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 4.dp, end = 16.dp, top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -86,7 +88,7 @@ fun SearchScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
         if (q.isNotEmpty()) Text(
             "${NUMBER_WORDS.getOrNull(shown.size) ?: shown.size.toString()} result${if (shown.size == 1) "" else "s"} for “${query.trim()}”",
             Modifier.padding(start = 20.dp, end = 20.dp, bottom = 10.dp),
-            fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontSize = 16.sp, color = c.ink,
+            fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontSize = 16.sp, color = c.ink,
         )
         LazyColumn(Modifier.fillMaxSize().navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             itemsIndexed(shown, key = { _, it -> it.first.id }) { i, (e, d, why) ->
@@ -94,7 +96,7 @@ fun SearchScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
                 StampRow(
                     stamp = "${d.dayOfMonth}", color = t.type(e.type), title = rowTitle(e),
                     subtitle = "${whatLine(e, d)}, ${shortDate(d)}${if (n in 1..60) ", in ${daysLeft(n)}" else if (n == 0) ", today" else ""}",
-                    note = why, tilt = tiltFor(i) / 1.5f, onClick = { navigate("event/${e.id}") },
+                    note = why, tilt = tiltFor(i) / 1.5f, onClick = { navigate(Route.Event(e.id)) },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }

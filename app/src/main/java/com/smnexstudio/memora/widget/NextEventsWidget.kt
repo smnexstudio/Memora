@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.widget
 
+import com.smnexstudio.memora.logic.Agenda
+import com.smnexstudio.memora.data.Prefs
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
@@ -20,7 +22,6 @@ import com.smnexstudio.memora.logic.GoogleHolidays
 import com.smnexstudio.memora.logic.MONTHS
 import com.smnexstudio.memora.logic.availableFestivals
 import com.smnexstudio.memora.logic.daysUntil
-import com.smnexstudio.memora.logic.nextDate
 import com.smnexstudio.memora.logic.nextFestivalDate
 import com.smnexstudio.memora.logic.ordinal
 import com.smnexstudio.memora.logic.today
@@ -41,10 +42,10 @@ enum class LockedWidget(val id: String) {
 
 /** Widget preferences, from Settings → Widget. */
 object WidgetPrefs {
-    fun locked() = LockedWidget.from(Repo.getSetting("widgetLocked", "count"))
-    fun ages() = Repo.getBool("widgetAges", true)
-    fun festivals() = Repo.getBool("widgetFestivals", true)
-    fun rows() = Repo.getSetting("widgetRows", "3").toIntOrNull()?.coerceIn(1, 5) ?: 3
+    fun locked() = Prefs.widgetLocked.get()
+    fun ages() = Prefs.widgetAges.get()
+    fun festivals() = Prefs.widgetFestivals.get()
+    fun rows() = Prefs.widgetRows.get()
 }
 
 /**
@@ -102,12 +103,12 @@ class NextEventsWidget : AppWidgetProvider() {
         private fun render(context: Context, manager: AppWidgetManager, ids: IntArray) {
             Repo.init(context)
             GoogleHolidays.load()
-            val lockOn = Repo.getBool("appLock", false)
+            val lockOn = Prefs.appLock.get()
             val mode = if (lockOn) WidgetPrefs.locked() else LockedWidget.FULL
             val now = today()
-            val people = Repo.listEvents().map { Entry.Person(it, nextDate(it)) }
+            val people = Agenda.current().upcoming.map { (e, d) -> Entry.Person(e, d) }
             val fests = if (WidgetPrefs.festivals()) {
-                val on = Repo.festivals()
+                val on = Prefs.festivals.get()
                 availableFestivals().filter { it.id in on }.mapNotNull { f -> nextFestivalDate(f)?.let { Entry.Fest(f, it) } }
             } else emptyList()
             val entries = (people + fests).sortedWith(compareBy({ it.date }, { (it as? Entry.Person)?.e?.name ?: "" }))

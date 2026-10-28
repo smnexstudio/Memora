@@ -1,5 +1,8 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.historyVersion
+import com.smnexstudio.memora.data.Prefs
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -65,9 +68,16 @@ import com.smnexstudio.memora.logic.offsetLabel
 import com.smnexstudio.memora.logic.shortDate
 import com.smnexstudio.memora.logic.today
 import com.smnexstudio.memora.reminders.Reminders
+import com.smnexstudio.memora.data.EventType
+import com.smnexstudio.memora.logic.ordinal
+import com.smnexstudio.memora.logic.yearsOn
+import com.smnexstudio.memora.logic.MONTHS
+import com.smnexstudio.memora.ui.BoardDetail
+import com.smnexstudio.memora.ui.Mono
+import com.smnexstudio.memora.ui.boardDate
 import com.smnexstudio.memora.ui.BoxField
 import com.smnexstudio.memora.ui.DashedDivider
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Handwriting
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.IconTap
@@ -90,14 +100,15 @@ import kotlin.concurrent.thread
 import androidx.compose.foundation.layout.statusBarsPadding
 
 @Composable
-fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
+fun EventScreen(id: Long, onBack: () -> Unit, navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
     val context = LocalContext.current
-    val version by Repo.version.collectAsState()
-    val e = remember(version, id) { Repo.getEvent(id) }
-    val history = remember(version, id) { Repo.listHistory(id) }
-    val notes = remember(version, id) { Repo.listNotes(id) }
+    val events by Repo.events.collectAsState()
+    val e = remember(events, id) { Repo.getEvent(id) }
+    val changes = historyVersion()
+    val history = remember(changes, id) { Repo.listHistory(id) }
+    val notes = remember(changes, id) { Repo.listNotes(id) }
     var confirmDelete by remember { mutableStateOf(false) }
     var showReminders by remember { mutableStateOf(false) }
     var noteKind by rememberSaveable { mutableStateOf(NoteKind.IDEA) }
@@ -131,14 +142,38 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(start = 4.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconTap(Ic.BACK, "Back", onBack)
-            Spacer(Modifier.weight(1f))
-            Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { navigate("edit?id=${e.id}") }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                Text("Edit", fontWeight = FontWeight.Bold, color = c.ink, textDecoration = TextDecoration.Underline)
+            if (t.board) Mono("Service detail", Modifier.weight(1f), size = 11, spacing = 1.5f) else Spacer(Modifier.weight(1f))
+            Box(Modifier.heightIn(min = 44.dp).clickable(role = Role.Button) { navigate(Route.Edit(id = e.id)) }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                if (t.board) Mono("Edit", color = c.stamp, size = 12, bold = true)
+                else Text("Edit", fontWeight = FontWeight.Bold, color = c.ink, textDecoration = TextDecoration.Underline)
             }
         }
 
+        if (t.board) PaperCard(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp), padding = PaddingValues(16.dp), gap = 10.dp) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Stamp(
+                    "${date.dayOfMonth}", t.type(e.type), filled = days == 0, width = 70.dp, height = 62.dp, fontSize = 28,
+                    caption = MONTHS[date.monthValue - 1].take(3),
+                )
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(e.name.uppercase(), fontFamily = DisplayFont, fontWeight = FontWeight.Black, fontSize = 24.sp, lineHeight = 26.sp, color = c.ink)
+                    Mono("${eventLabel(e)} · ${longDate(e.month, e.day, e.year)}", size = 10, maxLines = 2)
+                    yearsOn(e, date)?.let { y -> Mono(if (e.type == EventType.BIRTHDAY) "Turns $y" else "${ordinal(y)} anniversary", size = 10) }
+                }
+            }
+            Mono(
+                "● " + when (days) {
+                    0 -> "On time — today"
+                    1 -> "Due tomorrow"
+                    else -> "Due in $days days · ${boardDate(date)}"
+                } + if (big) " · milestone" else "",
+                color = if (days == 0) c.ok else c.stamp, size = 11, bold = true, maxLines = 2,
+            )
+            lunarLabel(e)?.let { Mono("Tithi · $it", color = c.festival, size = 10, maxLines = 2) }
+        }
+
         // The postcard header
-        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp)) {
+        if (!t.board) Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp)) {
             PaperCard(tilt = -0.8f, padding = PaddingValues(18.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Stamp(
@@ -146,7 +181,7 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
                         caption = if (days == 0) "today" else "in ${daysLeft(days)}",
                     )
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(e.name, fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, lineHeight = 30.sp, color = c.ink)
+                        Text(e.name, fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, lineHeight = 30.sp, color = c.ink)
                         Text("${eventLabel(e)}, ${longDate(e.month, e.day, e.year)}", fontSize = 15.sp, color = c.muted)
                         lunarLabel(e)?.let { Text("Lunar: $it, this year ${shortDate(date)}", fontSize = 13.sp, color = c.festival) }
                         milestone(e, date)?.let { m -> if (big) MilestoneTag(m.replaceFirstChar { it.uppercase() }) }
@@ -154,7 +189,7 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
                 }
             }
             if (e.year != null) Box(
-                Modifier.align(Alignment.BottomEnd).offset(x = (-14).dp, y = 14.dp).size(56.dp).rotate(12f).clip(CircleShape)
+                Modifier.align(Alignment.BottomEnd).offset(x = (-14).dp, y = 14.dp).size(56.dp).rotate(if (theme.board) 0f else 12f).clip(CircleShape)
                     .background(c.paper).border(2.dp, c.stamp.copy(alpha = 0.5f), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -162,8 +197,8 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
             }
         }
 
-        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 26.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            PostButton("Send card", { navigate("approve/${e.id}") }, Modifier.weight(1f), look = Look.STAMP, height = 60.dp, icon = Ic.MAIL, stacked = true, fontSize = 14)
+        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = if (t.board) 14.dp else 26.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PostButton("Send card", { navigate(Route.Approve(e.id)) }, Modifier.weight(1f), look = Look.STAMP, height = 60.dp, icon = Ic.MAIL, stacked = true, fontSize = 14)
             PostButton(
                 "Call", {
                     e.phone?.let { context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${Uri.encode(it)}"))) }
@@ -217,7 +252,7 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
                 list.forEachIndexed { i, n ->
                     if (i > 0) DashedDivider()
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        if (n.kind == NoteKind.GIFT && n.year != null) Text("${n.year}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = c.muted)
+                        if (n.kind == NoteKind.GIFT && n.year != null) Text("${n.year}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = c.muted)
                         Handwriting(n.text, Modifier.weight(1f), size = 23)
                         IconTap(Ic.CLOSE, "Remove note", { Repo.deleteNote(n.id) }, color = c.muted, size = 16)
                     }
@@ -240,17 +275,28 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
                 }
             }
 
-            if (history.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (history.isNotEmpty() && t.board) PaperCard(padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), gap = 0.dp) {
+                Mono("Cards sent · log", Modifier.padding(bottom = 6.dp), size = 10, spacing = 1.5f)
+                history.forEachIndexed { i, h ->
+                    if (i > 0) DashedDivider()
+                    val skipped = h.channel == "skipped"
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("${h.year}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = if (skipped) c.muted else c.ink)
+                        Mono(if (skipped) "Not sent" else Channel.from(h.channel)?.label ?: h.channel, Modifier.weight(1f), size = 11)
+                        Mono(if (skipped) "Skipped" else "Sent", color = if (skipped) c.muted else c.ok, size = 11, bold = true)
+                    }
+                }
+            } else if (history.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SectionTitle("Cards sent over the years", Modifier.padding(horizontal = 4.dp), size = 17)
                 history.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         row.forEachIndexed { i, h ->
                             val skipped = h.channel == "skipped"
                             Column(
-                                Modifier.weight(1f).rotate(listOf(-2f, 1.5f, -1f)[i]).paper(if (skipped) c.paperAlt else c.paper, c.shadow).padding(10.dp),
+                                Modifier.weight(1f).rotate(if (theme.board) 0f else listOf(-2f, 1.5f, -1f)[i]).paper(if (skipped) c.paperAlt else c.paper, c.shadow).padding(10.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                Text("${h.year}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = if (skipped) c.muted else c.ink)
+                                Text("${h.year}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = if (skipped) c.muted else c.ink)
                                 Text(if (skipped) "Not sent" else Channel.from(h.channel)?.label ?: h.channel, fontSize = 12.sp, color = c.muted)
                                 RubberStamp(if (skipped) "Skipped" else "Sent", if (skipped) c.muted else c.ok, fontSize = 11)
                             }
@@ -268,7 +314,7 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
     if (showReminders) AlertDialog(
         onDismissRequest = { showReminders = false },
         containerColor = c.paper,
-        title = { Text("Reminders at ${clock(Repo.reminderHour(), Repo.reminderMinute())}", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, color = c.ink) },
+        title = { Text("Reminders at ${clock(Prefs.reminderHour.get(), Prefs.reminderMinute.get())}", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, color = c.ink) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 (offsets.sortedDescending().map { o -> (if (o == MILESTONE_OFFSET && big) "2 weeks before, milestone" else "${offsetLabel(o)} before") to date.minusDays(o.toLong()) } +
@@ -279,7 +325,7 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
                         Text(shortDate(d), fontSize = 13.sp, color = c.muted)
                     }
                 }
-                LinkText("Change early reminders", { showReminders = false; navigate("edit?id=${e.id}") })
+                LinkText("Change early reminders", { showReminders = false; navigate(Route.Edit(id = e.id)) })
             }
         },
         confirmButton = { TextButton({ showReminders = false }) { Text("Done", fontWeight = FontWeight.Bold, color = c.ink) } },
@@ -307,8 +353,9 @@ fun EventScreen(id: Long, onBack: () -> Unit, navigate: (String) -> Unit) {
 @Composable
 private fun InfoLine(label: String, value: String, faint: Boolean) {
     val c = theme.c
+    if (theme.board) return BoardDetail(label, value, faint)
     Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontSize = 15.sp, color = c.ink)
+        Text(label, fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontSize = 15.sp, color = c.ink)
         Text(value, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = if (faint) c.faint else c.ink, textAlign = TextAlign.End)
     }
 }

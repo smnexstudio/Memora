@@ -20,7 +20,7 @@ Native Android app in Kotlin with Jetpack Compose. All data stays on the phone (
 ./gradlew assembleRelease        # app/build/outputs/apk/release/app-release.apk
 ```
 
-Without a release key, both build types are signed with `app/debug.keystore`. **Before publishing**, create your own key:
+Debug builds are signed with `app/debug.keystore`, a **public** key kept in the repo. Release builds are **never** signed with it: `assembleRelease` fails unless the release key below is set. For a throwaway local test of the release variant (R8 shrinking, say), pass `-PallowDebugSigning=true`; never share that APK, because anyone can sign a replacement for it. To make your release key:
 
 ```bash
 keytool -genkeypair -v -keystore memora.jks -alias memora -keyalg RSA -keysize 2048 -validity 10000
@@ -38,7 +38,7 @@ git tag v1.0.0 && git push origin v1.0.0
 
 Before tagging, move the `## [Unreleased]` notes in `CHANGELOG.md` under a `## [1.0.1] - date` heading: the workflow uses that section as the release notes (or GitHub's generated notes if there isn't one). Then push the tag, or run **Release** from the Actions tab with a version number. The tag sets `versionName` (1.0.0) and `versionCode` (major×10000 + minor×100 + patch, so 1.0.0 is 10000), so each release installs over the last.
 
-To sign with your own key, add repository secrets `MEMORA_KEYSTORE_BASE64` (`base64 -w0 memora.jks`), `MEMORA_KEYSTORE_PASSWORD`, `MEMORA_KEY_ALIAS` and `MEMORA_KEY_PASSWORD`. Without them the build is signed with the shared debug key and the run shows a warning. Local builds read the same `MEMORA_*` environment variables, and `-PversionName` / `-PversionCode`.
+To sign with your own key, add repository secrets `MEMORA_KEYSTORE_BASE64` (`base64 -w0 memora.jks`), `MEMORA_KEYSTORE_PASSWORD`, `MEMORA_KEY_ALIAS` and `MEMORA_KEY_PASSWORD`. Without them the release stops; it is never signed with the shared debug key. Local builds read the same `MEMORA_*` environment variables, and `-PversionName` / `-PversionCode`.
 
 ## Project layout
 

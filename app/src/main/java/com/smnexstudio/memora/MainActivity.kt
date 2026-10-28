@@ -1,8 +1,9 @@
 package com.smnexstudio.memora
 
+import androidx.compose.runtime.LaunchedEffect
+import com.smnexstudio.memora.data.Prefs
 import android.Manifest
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.compose.setContent
@@ -11,7 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.DisposableEffect
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
-import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK
+import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.background
@@ -37,7 +38,6 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.border
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -68,18 +68,18 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.NavDestination.Companion.hasRoute
+import androidx.navigation.toRoute
+import com.smnexstudio.memora.ui.Route
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
 import com.smnexstudio.memora.data.AppPin
 import com.smnexstudio.memora.platform.LinkGuard
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.ui.PinColors
 import com.smnexstudio.memora.ui.PinEntry
 import com.smnexstudio.memora.ui.SetPinDialog
@@ -91,10 +91,11 @@ import com.smnexstudio.memora.logic.GoogleHolidays
 import com.smnexstudio.memora.reminders.Reminders
 import com.smnexstudio.memora.ui.MemoraTheme
 import com.smnexstudio.memora.ui.BottomNav
-import com.smnexstudio.memora.ui.Caveat
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.HandFont
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.LineIcon
+import com.smnexstudio.memora.ui.Skin
 import com.smnexstudio.memora.ui.Tab
 import com.smnexstudio.memora.ui.dashedBorder
 import com.smnexstudio.memora.ui.screens.ApproveScreen
@@ -120,11 +121,14 @@ private const val LOCK_GRACE_MS = 60_000L
 
 class MainActivity : FragmentActivity() {
     private var themeMode by mutableStateOf("system")
+    private var themeStyle by mutableStateOf(Skin.POSTCARD.id)
     private var locked by mutableStateOf(false)
     private var pinAsked by mutableStateOf(false) // asked this time the app was opened
     private var leftAt: Long? = null
     private var authenticating = false
     private var nav: NavHostController? = null
+    /** A link that arrived before navigation was set up (the process had been killed); opened once it is. */
+    private var pendingLink: Intent? = null
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -132,7 +136,8 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         LinkGuard.clean(intent)
         enableEdgeToEdge()
-        themeMode = Repo.getSetting("themeMode", "system")
+        themeMode = Prefs.themeMode.get()
+        themeStyle = Prefs.themeStyle.get()
         locked = isLockEnabled()
         applyPrivacy()
 
@@ -140,15 +145,17 @@ class MainActivity : FragmentActivity() {
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        // Download festival dates if any are missing, then rebuild alarms
-        // so one-off ones (milestones, digest, festivals) roll forward.
+        // Download festival dates if any are missing (only once festivals are switched on: the
+        // download tells Google which holiday calendars were picked), then rebuild alarms so
+        // one-off ones (milestones, digest, festivals) roll forward.
         thread {
-            GoogleHolidays.ensure()
+            if (Prefs.festivals.get().isNotEmpty()) GoogleHolidays.ensure()
             Reminders.syncAll(applicationContext)
         }
 
         setContent {
             val dark = themeMode == "dark" || (themeMode == "system" && isSystemInDarkTheme())
+            val skin = Skin.from(themeStyle)
             // Status and navigation bar icons follow Memora's theme, not the phone's.
             DisposableEffect(dark) {
                 val style = if (dark) SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
@@ -156,7 +163,7 @@ class MainActivity : FragmentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 onDispose {}
             }
-            MemoraTheme(dark) {
+            MemoraTheme(dark, skin) {
                 Box(Modifier.fillMaxSize().background(memoraTheme.c.ground)) {
                     // Kept composed so nothing in progress is lost, but nothing under the lock can be read out.
                     Box(Modifier.fillMaxSize().then(if (locked) Modifier.clearAndSetSemantics {} else Modifier)) { AppNav() }
@@ -179,7 +186,7 @@ class MainActivity : FragmentActivity() {
                     ) {
                         // Back leaves the app instead of revealing it.
                         BackHandler { moveTaskToBack(true) }
-                        MemoraTheme(dark) { LockScreen(canUseLock(), onBiometric = { unlock() }, onUnlocked = { locked = false }) }
+                        MemoraTheme(dark, skin) { LockScreen(canUseLock(), onBiometric = { unlock() }, onUnlocked = { locked = false }) }
                     }
                 }
             }
@@ -190,7 +197,9 @@ class MainActivity : FragmentActivity() {
         super.onNewIntent(intent)
         LinkGuard.clean(intent)
         setIntent(intent)
-        if (intent.data != null) nav?.handleDeepLink(intent)
+        if (intent.data == null) return
+        val n = nav
+        if (n != null) n.handleDeepLink(intent) else pendingLink = intent
     }
 
     override fun onStop() {
@@ -209,20 +218,29 @@ class MainActivity : FragmentActivity() {
     }
 
     fun setTheme(mode: String) {
-        Repo.setSetting("themeMode", mode)
+        Prefs.themeMode.set(mode)
         themeMode = mode
+    }
+
+    /** Postcard or Departures; see [Skin]. */
+    fun setStyle(style: String) {
+        Prefs.themeStyle.set(style)
+        themeStyle = style
     }
 
     // ---- App lock ----
 
+    // Class 3 (strong) biometrics only: weaker face unlock on some phones can be fooled by a photo.
+    // Phones without one fall back to the screen lock or the Memora PIN.
     private fun authenticators() =
-        BIOMETRIC_WEAK or DEVICE_CREDENTIAL
+        BIOMETRIC_STRONG or DEVICE_CREDENTIAL
 
-    fun isLockEnabled() = Repo.getBool("appLock", false)
+    fun isLockEnabled() = Prefs.appLock.get()
 
     /** With the lock on, keep Memora out of screenshots, screen recordings and the Recents preview. */
-    private fun applyPrivacy() {
-        if (isLockEnabled()) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    /** Hides Memora from screenshots and Recents while app lock is on, or when the user asks to. */
+    fun applyPrivacy() {
+        if (isLockEnabled() || Prefs.blockScreenshots.get()) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
     }
 
@@ -266,7 +284,7 @@ class MainActivity : FragmentActivity() {
         val finish = {
             thread {
                 AppPin.set(pin)
-                Repo.setBool("appLock", true)
+                Prefs.appLock.set(true)
                 runOnUiThread {
                     applyPrivacy()
                     NextEventsWidget.updateAll(this)
@@ -286,7 +304,7 @@ class MainActivity : FragmentActivity() {
     }
 
     fun finishTurnOff() {
-        Repo.setBool("appLock", false)
+        Prefs.appLock.set(false)
         AppPin.clear()
         applyPrivacy()
         NextEventsWidget.updateAll(this)
@@ -305,72 +323,52 @@ class MainActivity : FragmentActivity() {
     private fun AppNav() {
         val navController = rememberNavController()
         nav = navController
+        // Runs after NavHost has set the graph, so the link can be matched against it.
+        LaunchedEffect(navController) {
+            pendingLink?.let { pendingLink = null; navController.handleDeepLink(it) }
+        }
         val back: () -> Unit = { navController.popBackStack() }
-        val go: (String) -> Unit = { navController.navigate(it) }
+        val go: (Route) -> Unit = { navController.navigate(it) }
         val entry by navController.currentBackStackEntryAsState()
-        val route = entry?.destination?.route
-        val tabRoutes = Tab.entries.map { it.route }
+        val tab = Tab.entries.firstOrNull { entry?.destination?.hasRoute(it.route::class) == true }
 
         Box(Modifier.fillMaxSize()) {
             NavHost(
-                navController, startDestination = "home", Modifier.fillMaxSize(),
+                navController, startDestination = Route.Home, Modifier.fillMaxSize(),
                 enterTransition = { fadeIn(tween(160)) }, exitTransition = { fadeOut(tween(120)) },
             ) {
-                composable("home", deepLinks = listOf(navDeepLink { uriPattern = "memora://home" })) { HomeScreen(navigate = go) }
+                composable<Route.Home>(deepLinks = listOf(navDeepLink<Route.Home>(basePath = "memora://home"))) { HomeScreen(navigate = go) }
                 // The locked widget's "Tap to view" lands here, on today.
-                composable("calendar", deepLinks = listOf(navDeepLink { uriPattern = "memora://calendar" })) { CalendarScreen(navigate = go) }
-                composable("people") { PeopleScreen(navigate = go) }
-                composable("settings") { SettingsScreen(activity = this@MainActivity, themeMode = themeMode, navigate = go) }
-                composable("search") { SearchScreen(onBack = back, navigate = go) }
-                composable(
-                    "edit?id={id}&date={date}",
-                    arguments = listOf(
-                        navArgument("id") { type = NavType.LongType; defaultValue = 0L },
-                        navArgument("date") { type = NavType.StringType; nullable = true; defaultValue = null },
-                    ),
-                ) { e ->
+                composable<Route.Calendar>(deepLinks = listOf(navDeepLink<Route.Calendar>(basePath = "memora://calendar"))) { CalendarScreen(navigate = go) }
+                composable<Route.People> { PeopleScreen(navigate = go) }
+                composable<Route.Settings> { SettingsScreen(activity = this@MainActivity, themeMode = themeMode, themeStyle = themeStyle, navigate = go) }
+                composable<Route.Search> { SearchScreen(onBack = back, navigate = go) }
+                composable<Route.Edit> { e ->
+                    val r = e.toRoute<Route.Edit>()
                     EditScreen(
-                        editingId = e.arguments?.getLong("id")?.takeIf { it > 0 },
-                        initialDate = e.arguments?.getString("date")?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                        editingId = r.id.takeIf { it > 0 },
+                        initialDate = r.date?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
                         onBack = back, navigate = go,
                     )
                 }
-                composable(
-                    "event/{id}",
-                    arguments = listOf(navArgument("id") { type = NavType.LongType }),
-                    deepLinks = listOf(navDeepLink { uriPattern = "memora://event/{id}" }),
-                ) { e ->
-                    EventScreen(id = e.arguments?.getLong("id") ?: 0, onBack = back, navigate = go)
+                composable<Route.Event>(deepLinks = listOf(navDeepLink<Route.Event>(basePath = "memora://event"))) { e ->
+                    EventScreen(id = e.toRoute<Route.Event>().id, onBack = back, navigate = go)
                 }
-                composable(
-                    "approve/{id}?channel={channel}&year={year}&belated={belated}",
-                    arguments = listOf(
-                        navArgument("id") { type = NavType.LongType },
-                        navArgument("channel") { type = NavType.StringType; nullable = true; defaultValue = null },
-                        navArgument("year") { type = NavType.IntType; defaultValue = 0 },
-                        navArgument("belated") { type = NavType.BoolType; defaultValue = false },
-                    ),
-                    deepLinks = listOf(navDeepLink { uriPattern = "memora://approve/{id}?channel={channel}" }),
-                ) { e ->
-                    val a = e.arguments
-                    ApproveScreen(
-                        id = a?.getLong("id") ?: 0,
-                        initialChannel = a?.getString("channel"),
-                        year = a?.getInt("year")?.takeIf { it > 1900 },
-                        belated = a?.getBoolean("belated") ?: false,
-                        onBack = back,
-                    )
+                // Notifications open memora://approve/5, or memora://approve/5?channel=whatsapp.
+                composable<Route.Approve>(deepLinks = listOf(navDeepLink<Route.Approve>(basePath = "memora://approve"))) { e ->
+                    val r = e.toRoute<Route.Approve>()
+                    ApproveScreen(id = r.id, initialChannel = r.channel, year = r.year.takeIf { it > 1900 }, belated = r.belated, onBack = back)
                 }
-                composable("import") { ImportScreen(onBack = back) }
-                composable("festivals") { FestivalsScreen(onBack = back) }
-                composable("missed") { MissedScreen(onBack = back, navigate = go) }
-                composable("checks") { ReminderChecksScreen(onBack = back) }
-                composable("widget") { WidgetSettingsScreen(onBack = back) }
+                composable<Route.Import> { ImportScreen(onBack = back) }
+                composable<Route.Festivals> { FestivalsScreen(onBack = back) }
+                composable<Route.Missed> { MissedScreen(onBack = back, navigate = go) }
+                composable<Route.Checks> { ReminderChecksScreen(onBack = back) }
+                composable<Route.Widget> { WidgetSettingsScreen(onBack = back) }
                 // The "ready to install" notification lands here.
-                composable("update", deepLinks = listOf(navDeepLink { uriPattern = "memora://update" })) { UpdateScreen(onBack = back) }
+                composable<Route.Update>(deepLinks = listOf(navDeepLink<Route.Update>(basePath = "memora://update"))) { UpdateScreen(onBack = back) }
             }
-            if (route in tabRoutes) BottomNav(
-                current = route,
+            if (tab != null) BottomNav(
+                current = tab,
                 onTab = { tab ->
                     navController.navigate(tab.route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -378,22 +376,32 @@ class MainActivity : FragmentActivity() {
                         restoreState = true
                     }
                 },
-                onAdd = { go("edit") },
+                onAdd = { go(Route.Edit()) },
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
         }
     }
 }
 
-/** "Sealed": the postcard the app hides behind until unlocked. */
+/**
+ * What the app hides behind until unlocked. Postcard: "Sealed", a postcard on navy.
+ * Departures: "Locked", a panel on the night board. Both keep one look whatever the light or dark mode.
+ */
 @Composable
 private fun LockScreen(canUseBiometric: Boolean, onBiometric: () -> Unit, onUnlocked: () -> Unit) {
+    val board = memoraTheme.board
     val navy = Color(0xFF23395B)
     val paper = Color(0xFFFFFDF8)
     val red = Color(0xFFB23A2E)
-    val soft = Color(0xFFD3D8E6)
+    val ground = if (board) Color(0xFF121417) else navy
+    val card = if (board) Color(0xFF1A1D22) else paper
+    val cardInk = if (board) Color(0xFFF2EFE9) else navy
+    val light = if (board) Color(0xFFF2EFE9) else paper
+    val accent = if (board) Color(0xFFF2C14E) else red
+    val onAccent = if (board) Color(0xFF17140A) else paper
+    val soft = if (board) Color(0xFFA3A6AB) else Color(0xFFD3D8E6)
     Column(
-        Modifier.fillMaxSize().background(navy)
+        Modifier.fillMaxSize().background(ground)
             // Swallow touches so nothing behind the lock can be used.
             .clickable(indication = null, interactionSource = remember { MutableInteractionSource() }) {}
             .systemBarsPadding().verticalScroll(rememberScrollState()).padding(start = 28.dp, end = 28.dp, top = 28.dp, bottom = 24.dp),
@@ -401,35 +409,46 @@ private fun LockScreen(canUseBiometric: Boolean, onBiometric: () -> Unit, onUnlo
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Row(
-            Modifier.width(260.dp).rotate(-2f).background(paper).drawBehind {
-                // Airmail stripe along the top edge.
-                var x = 0f
-                val h = 6.dp.toPx()
-                val unit = 6.dp.toPx()
-                while (x < size.width) {
-                    drawRect(red, Offset(x, 0f), Size(2 * unit, h))
-                    drawRect(navy, Offset(x + 3 * unit, 0f), Size(2 * unit, h))
-                    x += 6 * unit
-                }
-            }.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 14.dp),
+            Modifier.width(260.dp).rotate(if (board) 0f else -2f)
+                .then(if (board) Modifier.clip(RoundedCornerShape(10.dp)) else Modifier)
+                .background(card).drawBehind {
+                    if (board) {
+                        // An amber rule along the top, like the head of the board.
+                        drawRect(accent, Offset.Zero, Size(size.width, 3.dp.toPx()))
+                        return@drawBehind
+                    }
+                    // Airmail stripe along the top edge.
+                    var x = 0f
+                    val h = 6.dp.toPx()
+                    val unit = 6.dp.toPx()
+                    while (x < size.width) {
+                        drawRect(red, Offset(x, 0f), Size(2 * unit, h))
+                        drawRect(navy, Offset(x + 3 * unit, 0f), Size(2 * unit, h))
+                        x += 6 * unit
+                    }
+                }.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Box(
-                Modifier.size(48.dp, 58.dp).dashedBorder(red, 2.dp).padding(3.dp).background(red),
+                Modifier.size(48.dp, 58.dp).dashedBorder(accent, 2.dp).padding(3.dp)
+                    .then(if (board) Modifier.clip(RoundedCornerShape(4.dp)) else Modifier).background(accent),
                 contentAlignment = Alignment.Center,
-            ) { Text("M", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = paper) }
+            ) { Text("M", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = onAccent) }
             Column {
-                Text("Sealed", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = navy)
-                Text("Unlock to see your people, notes and wishes.", fontFamily = Caveat, fontSize = 19.sp, lineHeight = 21.sp, color = navy)
+                Text(if (board) "LOCKED" else "Sealed", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, color = cardInk)
+                Text(
+                    "Unlock to see your people, notes and wishes.", fontFamily = HandFont,
+                    fontSize = (19 * memoraTheme.handScale).sp, lineHeight = (if (board) 18 else 21).sp, color = cardInk,
+                )
             }
         }
         val fingerprint: @Composable () -> Unit = {
             Box(
-                Modifier.size(64.dp).clip(CircleShape).dashedBorder(Color(0xFFF2B8AE), 2.dp, radius = 32.dp)
+                Modifier.size(64.dp).clip(CircleShape).dashedBorder(if (board) accent.copy(alpha = 0.6f) else Color(0xFFF2B8AE), 2.dp, radius = 32.dp)
                     .clickable(role = Role.Button, onClick = onBiometric).semantics { contentDescription = "Unlock with fingerprint or phone screen lock" },
                 contentAlignment = Alignment.Center,
-            ) { LineIcon(Ic.FINGERPRINT, paper, size = 30) }
+            ) { LineIcon(Ic.FINGERPRINT, light, size = 30) }
         }
         if (AppPin.isSet()) {
             Text(
@@ -437,7 +456,8 @@ private fun LockScreen(canUseBiometric: Boolean, onBiometric: () -> Unit, onUnlo
                 fontSize = 15.sp, color = soft, textAlign = TextAlign.Center,
             )
             PinEntry(
-                PinColors(ink = paper, muted = soft, key = Color(0x1FFFFDF8), accent = Color(0xFFF2A93B), onAccent = Color(0xFF3A2600)),
+                if (board) PinColors(ink = light, muted = soft, key = Color(0x14FFFFFF), accent = accent, onAccent = onAccent)
+                else PinColors(ink = paper, muted = soft, key = Color(0x1FFFFDF8), accent = Color(0xFFF2A93B), onAccent = Color(0xFF3A2600)),
                 "Unlock", onUnlocked, extraKey = if (canUseBiometric) fingerprint else null,
             )
         } else {

@@ -1,5 +1,9 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.festivalVersion
+import com.smnexstudio.memora.ui.rememberAgenda
+import com.smnexstudio.memora.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -13,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,13 +27,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.logic.MONTHS
 import com.smnexstudio.memora.logic.availableFestivals
 import com.smnexstudio.memora.logic.daysUntil
 import com.smnexstudio.memora.logic.festivalDate
-import com.smnexstudio.memora.logic.occurrencesInMonth
 import com.smnexstudio.memora.logic.today
+import com.smnexstudio.memora.ui.BoardColumns
+import com.smnexstudio.memora.ui.DepartureRow
+import com.smnexstudio.memora.ui.Mono
+import com.smnexstudio.memora.ui.boardDate
+import com.smnexstudio.memora.ui.boardIn
 import com.smnexstudio.memora.ui.CircleIconButton
 import com.smnexstudio.memora.ui.Dot
 import com.smnexstudio.memora.ui.Ic
@@ -56,25 +62,22 @@ import java.time.YearMonth
 private enum class Show(val label: String) { ALL("Everything"), PEOPLE("People only"), FESTIVALS("Festivals only") }
 
 @Composable
-fun CalendarScreen(navigate: (String) -> Unit) {
+fun CalendarScreen(navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
-    val version by Repo.version.collectAsState()
-    val events = remember(version) { Repo.listEvents() }
-    val festivalIds = remember(version) { Repo.festivals() }
+    val agenda = rememberAgenda()
+    val festivalIds = Prefs.festivals.current
+    val festivalDates = festivalVersion()
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selected by remember { mutableStateOf<LocalDate?>(today()) }
     var show by rememberSaveable { mutableStateOf(Show.ALL) }
 
-    val marks = remember(version, month, show) {
-        monthMarks(t, events, festivalIds, month, people = show != Show.FESTIVALS, festivals = show != Show.PEOPLE)
+    val marks = remember(agenda, festivalIds, festivalDates, month, show, t) {
+        monthMarks(t, agenda, festivalIds, month, people = show != Show.FESTIVALS, festivals = show != Show.PEOPLE)
     }
     val day = selected
-    val dayEvents = remember(version, day, show) {
-        if (day == null || show == Show.FESTIVALS) emptyList()
-        else events.filter { e -> occurrencesInMonth(e, YearMonth.from(day)).any { it == day } }.sortedBy { it.name }
-    }
-    val dayFestivals = remember(version, day, show) {
+    val dayEvents = if (day == null || show == Show.FESTIVALS) emptyList() else agenda.on(day)
+    val dayFestivals = remember(festivalIds, festivalDates, day, show) {
         if (day == null || show == Show.PEOPLE) emptyList()
         else availableFestivals().filter { it.id in festivalIds && festivalDate(it, day.year) == day }
     }
@@ -103,10 +106,34 @@ fun CalendarScreen(navigate: (String) -> Unit) {
             }
         }
 
-        if (day != null) Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (day != null && t.board) Column(Modifier.padding(top = 18.dp)) {
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Mono("Dep · ${boardDate(day)}", Modifier.weight(1f), color = c.stamp, size = 11, bold = true, spacing = 1.5f)
+                LinkText("Add on this day", { navigate(Route.Edit.on(day)) })
+            }
+            BoardColumns("Date", "Who", "In")
+            if (dayEvents.isEmpty() && dayFestivals.isEmpty()) Mono("No departures on this day.", Modifier.padding(16.dp), size = 11)
+            dayEvents.forEach { e ->
+                val n = daysUntil(day)
+                val sent = e.lastSentYear == day.year && n <= 0
+                DepartureRow(
+                    flap = "${day.dayOfMonth}", name = rowTitle(e), meta = whatLine(e, day) + if (n == 0 && !sent) " · not sent yet" else "",
+                    whenText = if (sent) "SENT" else boardIn(n), whenColor = if (sent || n == 0) c.ok else null,
+                    flapColor = t.type(e.type), now = n == 0 && !sent,
+                    action = if (n == 0 && !sent) "Wish now" else null, onAction = { navigate(Route.Approve(e.id)) },
+                    onClick = { navigate(Route.Event(e.id)) },
+                )
+            }
+            dayFestivals.forEach { f ->
+                DepartureRow(
+                    flap = "${day.dayOfMonth}", name = f.name, meta = "Festival" + if (f.approximate) " · may shift a day" else "",
+                    whenText = boardIn(daysUntil(day)), flapColor = c.festival, onClick = {},
+                )
+            }
+        } else if (day != null) Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 SectionTitle(dayTitle(day), Modifier.weight(1f), italic = false, size = 20)
-                LinkText("Add on this day", { navigate("edit?date=$day") })
+                LinkText("Add on this day", { navigate(Route.Edit.on(day)) })
             }
             if (dayEvents.isEmpty() && dayFestivals.isEmpty()) Text("Nothing on this day.", Modifier.padding(horizontal = 4.dp), fontSize = 14.sp, color = c.muted)
             dayEvents.forEachIndexed { i, e ->
@@ -114,7 +141,7 @@ fun CalendarScreen(navigate: (String) -> Unit) {
                 StampRow(
                     stamp = stampText(e, day), color = t.type(e.type), title = rowTitle(e),
                     subtitle = whatLine(e, day) + if (daysUntil(day) == 0 && !sent) ", card not sent yet" else "",
-                    filled = daysUntil(day) == 0 && !sent, tilt = tiltFor(i), onClick = { navigate("event/${e.id}") },
+                    filled = daysUntil(day) == 0 && !sent, tilt = tiltFor(i), onClick = { navigate(Route.Event(e.id)) },
                     badge = if (sent) ({ RubberStamp("Sent", c.ok) }) else null,
                 )
             }

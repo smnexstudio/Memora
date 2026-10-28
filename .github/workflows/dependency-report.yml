@@ -1,0 +1,42 @@
+# Once a quarter, checks Memora's Gradle dependencies for newer stable versions and known
+# vulnerabilities, and opens an issue listing them. It doesn't build, test or change anything,
+# and opens no pull requests: updating is done by hand, then CI builds and tests the change.
+#
+# Run it any time from the Actions tab (Dependency report > Run workflow).
+
+name: Dependency report
+
+on:
+  schedule:
+    - cron: "0 6 1 1,4,7,10 *" # 06:00 UTC on 1 January, April, July and October
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Check versions and vulnerabilities
+        id: check
+        env:
+          REPORT_PATH: ${{ runner.temp }}/report.md
+        run: python3 .github/scripts/dependency_report.py
+
+      - name: Open an issue
+        if: steps.check.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VULNERABLE: ${{ steps.check.outputs.vulnerable }}
+          REPORT_PATH: ${{ runner.temp }}/report.md
+        run: |
+          quarter="$(date -u +%Y) Q$(( ($(date -u +%-m) - 1) / 3 + 1 ))"
+          title="Dependency report $quarter"
+          [ "$VULNERABLE" = "true" ] && title="$title: vulnerabilities found"
+          gh label create dependencies --color 0366d6 --description "Outdated or vulnerable dependencies" --force
+          gh issue create --title "$title" --body-file "$REPORT_PATH" --label dependencies

@@ -39,7 +39,7 @@ Needs **Android 13 or later**.
 
 After that, Memora keeps itself up to date: it checks GitHub for a new release once a week (or when you tap **Settings → About Memora → Check for updates**), shows what's new, and installs it after Android asks you to confirm. Before installing, it checks the download matches the release's SHA-256 checksum and is signed with the same key as the Memora you have.
 
-See what changed in each version in the [changelog](CHANGELOG.md). Each release lists a SHA-256 checksum, so you can check the file you downloaded is the one that was published.
+See what changed in each version in the [changelog](CHANGELOG.md). Each release lists a SHA-256 checksum, so you can check the file you downloaded is the one that was published, and a software bill of materials (`Memora-x.y.z.cdx.json`) listing every library inside the app.
 
 ## Features
 
@@ -47,6 +47,7 @@ See what changed in each version in the [changelog](CHANGELOG.md). Each release 
 
 - Birthdays, wedding anniversaries and any other occasion: housewarmings, graduations, farewells.
 - An early reminder (1 week, 3 days, 2 days or 1 day before) and another on the morning of the day, at the time you choose.
+- **Notification, alarm or both**: an alarm rings until you stop it and fills the lock screen, so a birthday can't slip past in a pile of notifications.
 - **Milestone alerts** two weeks before big ones: 18th, 21st, 25th, 50th birthdays; 10th, 25th, 50th anniversaries.
 - Ages and "years married" worked out for you, even if you don't know the year for everyone.
 - A Sunday digest of the week ahead, and a "missed" list so a belated wish is never forgotten.
@@ -55,7 +56,7 @@ See what changed in each version in the [changelog](CHANGELOG.md). Each release 
 ### Send wishes on WhatsApp, SMS or email
 
 - Ready-made wishes in formal, fun and family tones, or write your own. `{name}`, `{age}` and `{ordinal}` fill in every year.
-- **Digital postcards**: five designs (Marigold, Airmail, Rangoli, Big number, Confetti), shaped for a WhatsApp chat, a two-sided postcard or a **WhatsApp Status**.
+- **Digital postcards** designed for the occasion: Party, Blush, Ribbons, Confetti and Marigold for birthdays; Love letter, Golden rings, Wildflower and Rangoli for anniversaries; Plain, Classic and In memory for graduations, remembrance days and other occasions; plus Big number and Airmail. Each is shaped for a WhatsApp chat, a two-sided postcard or a **WhatsApp Status**, and the heading on the card is yours to change.
 - Or send plain text. Memora remembers how each person likes to be wished.
 - Memora opens WhatsApp, Messages or your email app with everything filled in; you tap send.
 
@@ -75,16 +76,20 @@ See what changed in each version in the [changelog](CHANGELOG.md). Each release 
 
 - **Everything stays on your phone.** No sign-up, no cloud, no ads, no analytics.
 - Memora only goes online to download festival dates and to check GitHub for app updates.
-- **App lock** with fingerprint, your phone's screen lock or a Memora PIN. While it's locked, Memora is hidden from screenshots and Recents, and names stay off the widget.
-- **Encrypted backups**: save a backup file to Drive or your phone, protected with a password if you like (AES-256).
+- **Names stay off the lock screen**: reminders and alarms say only "You have a reminder" until you unlock (you can turn this off).
+- **App lock** with a strong fingerprint or face unlock, your phone's screen lock or a Memora PIN. While it's on, Memora is hidden from screenshots and Recents, and names stay off the widget. You can also hide Memora from screenshots without the lock.
+- **Encrypted backups**: save a backup file to Drive or your phone, protected with a password (AES-256). Saving one without a password is a separate choice, and Home reminds you when your last backup is getting old.
+- **Erase everything** in one tap, and delete any cards you saved to the gallery.
 
-### Looks like a postcard
+### Two looks
 
-Paper cards, postage stamps and handwritten wishes, in light and dark themes.
+**Postcard**: paper cards, postage stamps and handwritten wishes. **Departures**: the year ahead as a station board, with split-flap dates, condensed capitals and mono times. Both come in light and dark, and the reminder time is set on a clock face drawn to match.
 
 ## Privacy
 
-Memora has no servers and no account. Your contacts, dates, notes and wishes live in the app's private storage on your phone. Contacts are read only when you import or look up a number, and nothing is uploaded. Festival dates are downloaded over HTTPS from Google Calendar's public holiday feeds, and update checks ask GitHub's public releases API for the latest version; no personal data is sent with either request. You can turn off automatic update checks in Settings.
+Memora has no servers and no account. Your contacts, dates, notes and wishes live in the app's private storage on your phone. Contacts are read only when you import or look up a number, and nothing is uploaded.
+
+Memora makes two kinds of network request, and neither carries anything about the people in it. Once you switch festivals on, it downloads Google Calendar's public holiday feed for the calendars you picked; Google sees your IP address and which calendars those are (a country, or a religion's holidays if you chose one). Update checks ask GitHub's public releases API for the latest version, once a week unless you turn them off in Settings. Full details are in [PRIVACY.md](PRIVACY.md); to report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## FAQ
 
@@ -98,7 +103,7 @@ No. Memora prepares the wish and opens WhatsApp, SMS or email for you. You alway
 Yes. Reminders, wishes, lunar dates and the widget all work offline. Only festival dates (once a year) and update checks need a connection.
 
 **Why are my reminders late?**
-Some phones (Xiaomi, Oppo, Vivo, Realme, Samsung) pause dormant apps to save battery. If Memora's Settings shows "Reminders may arrive late", tap it and fix what's marked, usually by setting battery use to "Unrestricted". Because Memora doesn't run continuous background tasks, "Unrestricted" will not drain your battery.
+Some phones (Xiaomi, Oppo, Vivo, Realme, Samsung) pause dormant apps to save battery. If Memora's Settings shows "Reminders may arrive late", tap it and fix what's marked, usually by setting battery use to "Unrestricted". Because Memora doesn't run continuous background tasks, "Unrestricted" will not drain your battery. The same screen shows when the next reminder is due and when reminders last went out, and can share a diagnostics log (what the app did, never names or dates) if something still seems wrong.
 
 **How do I move Memora to a new phone?**
 Settings → Back up, save the file to Google Drive, then Restore on the new phone. Backups from Memora 1.x restore too.
@@ -112,15 +117,16 @@ Not yet. Download it from [GitHub Releases](https://github.com/smnexstudio/Memor
 git clone https://github.com/smnexstudio/Memora.git
 cd Memora
 ./gradlew assembleDebug        # Windows: gradlew.bat assembleDebug
+./gradlew testDebugUnitTest    # unit tests
 ```
 
-You need JDK 17 and the Android SDK (platform 36). Setup, project layout, release signing and how each feature works are in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+The debug build installs as **Memora Debug**, beside the release app, with its own data. Release builds need your own signing key; see the docs. You need JDK 17 and the Android SDK (platform 36). Setup, project layout, release signing and how each feature works are in **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
 
 Built with Kotlin, Jetpack Compose, Material 3, SQLite and AlarmManager. No backend.
 
 ## Contributing
 
-Bug reports, ideas and pull requests are welcome. Please open an [issue](https://github.com/smnexstudio/Memora/issues) first for larger changes.
+Bug reports, ideas and pull requests are welcome. Please open an [issue](https://github.com/smnexstudio/Memora/issues) first for larger changes. Every pull request is built, unit-tested and linted by CI. Security problems: please report them privately, as [SECURITY.md](SECURITY.md) describes.
 
 ## License
 

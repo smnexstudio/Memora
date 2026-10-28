@@ -114,6 +114,20 @@ object Send {
         context.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    /** Deletes the cards Memora saved to Pictures/Memora. Returns how many went. Android lets an app delete its own pictures. */
+    fun deleteSavedCards(context: Context): Int = runCatching {
+        context.contentResolver.delete(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ? AND ${MediaStore.Images.Media.OWNER_PACKAGE_NAME} = ?",
+            arrayOf("Pictures/Memora%", context.packageName),
+        )
+    }.getOrDefault(0)
+
+    /** Deletes every card picture waiting in the cache. */
+    fun clearAllCards(context: Context) {
+        File(context.cacheDir, "cards").deleteRecursively()
+    }
+
     private fun start(context: Context, intent: Intent, error: String) {
         try {
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

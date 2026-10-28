@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <!-- Memora's core job is on-time reminders, so it uses the auto-granted exact alarm permission. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- "Alarm" reminders open a full-screen alarm over the lock screen. -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Installs Memora's own updates from GitHub releases, after the user confirms. -->
@@ -34,7 +39,7 @@
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
-        android:label="Memora"
+        android:label="${appLabel}"
         android:supportsRtl="true"
         android:theme="@style/Theme.Memora">
 
@@ -49,6 +54,16 @@
             </intent-filter>
         </activity>
 
+        <!-- The ringing alarm, over the lock screen. Kept out of Recents and its own task. -->
+        <activity
+            android:name=".reminders.AlarmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleInstance"
+            android:taskAffinity="${applicationId}.alarm"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
+
         <!-- Shares the card pictures with WhatsApp and email apps. -->
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -60,6 +75,11 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- Plays the alarm tone while an alarm rings (systemExempted: an exact-alarm app's alarm). -->
+        <service
+            android:name=".reminders.AlarmSound"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted" />
         <receiver android:name=".reminders.AlarmReceiver" android:exported="false" />
         <receiver android:name=".reminders.ActionReceiver" android:exported="false" />
         <receiver android:name=".platform.InstallReceiver" android:exported="false" />
@@ -75,7 +95,7 @@
         <receiver
             android:name=".widget.NextEventsWidget"
             android:exported="false"
-            android:label="Memora – next events">
+            android:label="${appLabel} – next events">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>

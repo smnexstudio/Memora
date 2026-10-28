@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.festivalVersion
+import com.smnexstudio.memora.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +21,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +33,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.logic.MAX_CALENDARS
 import com.smnexstudio.memora.logic.MONTHS
 import com.smnexstudio.memora.logic.GoogleHolidays
@@ -44,7 +44,7 @@ import com.smnexstudio.memora.logic.today
 import com.smnexstudio.memora.reminders.Reminders
 import com.smnexstudio.memora.ui.CalendarsDialog
 import com.smnexstudio.memora.ui.DashedDivider
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.IconTap
 import com.smnexstudio.memora.ui.LineIcon
@@ -73,14 +73,14 @@ import kotlin.concurrent.thread
 fun FestivalsScreen(onBack: () -> Unit) {
     val c = theme.c
     val app = LocalContext.current.applicationContext
-    val version by Repo.version.collectAsState()
-    val ids = remember(version) { Repo.festivals() }
-    val calendars = remember(version) { chosenCalendars(Repo.calendars()) }
-    val early = remember(version) { Repo.getBool("festivalEarly", false) }
-    val festivals = remember(version) {
+    val ids = Prefs.festivals.current
+    val calendars = chosenCalendars(Prefs.calendars.current)
+    val early = Prefs.festivalEarly.current
+    val festivalDates = festivalVersion()
+    val festivals = remember(festivalDates) {
         availableFestivals().map { it to nextFestivalDate(it) }.sortedWith(compareBy(nullsLast()) { it.second })
     }
-    val fetchedAt = remember(version) { Repo.getSetting("festivalFetchedAt", "").toLongOrNull() }
+    val fetchedAt = Prefs.festivalFetchedAt.current
     var attempt by remember { mutableIntStateOf(0) }
     var refresh by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
@@ -96,7 +96,7 @@ fun FestivalsScreen(onBack: () -> Unit) {
 
     fun setAll(on: Boolean) {
         val here = festivals.map { it.first.id }
-        Repo.setFestivals(if (on) (ids + here).distinct() else ids - here.toSet())
+        Prefs.festivals.set(if (on) (ids + here).distinct() else ids - here.toSet())
         thread { Reminders.syncAll(app) }
     }
 
@@ -141,7 +141,7 @@ fun FestivalsScreen(onBack: () -> Unit) {
 
             PaperCard(padding = PaddingValues(horizontal = 16.dp, vertical = 2.dp), gap = 0.dp) {
                 SwitchRow("Also remind a week before", "On top of the morning-of reminder", early, { on ->
-                    Repo.setBool("festivalEarly", on)
+                    Prefs.festivalEarly.set(on)
                     thread { Reminders.syncAll(app) }
                 })
             }
@@ -154,7 +154,7 @@ fun FestivalsScreen(onBack: () -> Unit) {
                 }
                 festivals.forEachIndexed { i, (f, next) ->
                     Row(
-                        Modifier.fillMaxWidth().rotate(tiltFor(i) * 0.7f).paper(c.paper, c.shadow).padding(horizontal = 14.dp, vertical = 10.dp),
+                        Modifier.fillMaxWidth().rotate(if (theme.board) 0f else tiltFor(i) * 0.7f).paper(c.paper, c.shadow).padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
@@ -164,8 +164,8 @@ fun FestivalsScreen(onBack: () -> Unit) {
                         ) {
                             if (next != null) {
                                 Text(MONTHS[next.monthValue - 1].take(3).uppercase(), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = c.festival, lineHeight = 11.sp)
-                                Text("${next.dayOfMonth}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.festival, lineHeight = 22.sp)
-                            } else Text("?", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.festival)
+                                Text("${next.dayOfMonth}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.festival, lineHeight = 22.sp)
+                            } else Text("?", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.festival)
                         }
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(f.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.ink)
@@ -179,7 +179,7 @@ fun FestivalsScreen(onBack: () -> Unit) {
                             if (f.approximate) RubberStamp("May shift by a day", c.festival, tilt = -3f, fontSize = 11)
                         }
                         PaperSwitch(f.id in ids, { on ->
-                            Repo.setFestivals(if (on) ids + f.id else ids - f.id)
+                            Prefs.festivals.set(if (on) ids + f.id else ids - f.id)
                             thread { Reminders.syncAll(app) }
                         })
                     }

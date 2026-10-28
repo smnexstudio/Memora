@@ -103,7 +103,7 @@ fun PinPad(
                                 Modifier.size(64.dp).clip(CircleShape).background(colors.key)
                                     .clickable(enabled = enabled, role = Role.Button) { if (pin.length < AppPin.MAX_LENGTH) pin += k },
                                 contentAlignment = Alignment.Center,
-                            ) { Text(k, fontFamily = Fraunces, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, color = colors.ink) }
+                            ) { Text(k, fontFamily = DisplayFont, fontWeight = FontWeight.SemiBold, fontSize = 26.sp, color = colors.ink) }
                         }
                     }
                 }
@@ -210,7 +210,7 @@ private fun PinDialogFrame(title: String, onDismiss: () -> Unit, content: @Compo
                 IconTap(Ic.CLOSE, "Cancel", onDismiss)
                 Spacer(Modifier.weight(1f))
             }
-            Text(title, fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = c.ink, textAlign = TextAlign.Center)
+            Text(title, fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = c.ink, textAlign = TextAlign.Center)
             content()
         }
     }
