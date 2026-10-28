@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.data.Prefs
 import android.Manifest
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,9 +69,9 @@ import com.smnexstudio.memora.logic.shortDate
 import com.smnexstudio.memora.logic.today
 import com.smnexstudio.memora.reminders.Reminders
 import com.smnexstudio.memora.ui.BottomBar
-import com.smnexstudio.memora.ui.Caveat
+import com.smnexstudio.memora.ui.HandFont
 import com.smnexstudio.memora.ui.ContactSuggestions
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Handwriting
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.LineIcon
@@ -95,7 +97,7 @@ private val PLACEHOLDER_CHIPS = listOf("{name}", "{first}", "{age}", "{ordinal}"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, navigate: (String) -> Unit) {
+fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
     val context = LocalContext.current
@@ -112,7 +114,7 @@ fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, na
     var email by rememberSaveable { mutableStateOf(existing?.email ?: "") }
     var messageEdited by rememberSaveable { mutableStateOf(existing != null) }
     var message by remember { mutableStateOf(TextFieldValue(existing?.message ?: "")) }
-    var offsets by rememberSaveable { mutableStateOf(existing?.offsets ?: Repo.defaultOffsets()) }
+    var offsets by rememberSaveable { mutableStateOf(existing?.offsets ?: Prefs.defaultOffsets.get()) }
     var lunar by rememberSaveable { mutableStateOf(existing?.lunar ?: false) }
     var showPicker by remember { mutableStateOf(false) }
     var showWishes by remember { mutableStateOf(false) }
@@ -148,12 +150,12 @@ fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, na
         val app = context.applicationContext
         thread { Reminders.syncAll(app) }
         onBack()
-        if (editingId == null) navigate("event/$id")
+        if (editingId == null) navigate(Route.Event(id))
     }
 
     Column(Modifier.fillMaxSize().imePadding()) {
         ScreenHeader(if (editingId != null) "Edit event" else "New event", onBack, close = true) {
-            if (editingId == null) PostButton("From contacts", { navigate("import") }, look = Look.OUTLINE, height = 40.dp, fontSize = 14)
+            if (editingId == null) PostButton("From contacts", { navigate(Route.Import) }, look = Look.OUTLINE, height = 40.dp, fontSize = 14)
         }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -242,11 +244,11 @@ fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, na
                 )
                 UnderlineField("Email, optional", email, { email = it }, placeholder = "name@example.com", keyboardType = KeyboardType.Email)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Your message", fontFamily = Fraunces, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
+                    Text("Your message", fontFamily = DisplayFont, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
                     BasicTextField(
                         value = shown,
                         onValueChange = { message = it; messageEdited = true },
-                        textStyle = TextStyle(fontFamily = Caveat, fontWeight = FontWeight.Medium, fontSize = 24.sp, lineHeight = 30.sp, color = c.ink),
+                        textStyle = TextStyle(fontFamily = HandFont, fontWeight = FontWeight.Medium, fontSize = 24.sp, lineHeight = 30.sp, color = c.ink),
                         cursorBrush = SolidColor(c.stamp), minLines = 3,
                         modifier = Modifier.fillMaxWidth().ruled(c.rule, 30.dp).semantics { contentDescription = "Your message" },
                     )
@@ -285,7 +287,7 @@ fun EditScreen(editingId: Long?, initialDate: LocalDate?, onBack: () -> Unit, na
                         }, enabled = on || offsets.size < 2, height = 42.dp)
                     }
                 }
-                Text("You’ll always get a reminder on the day, at ${clock(Repo.reminderHour(), Repo.reminderMinute())}.", fontSize = 13.sp, color = c.muted)
+                Text("You’ll always get a reminder on the day, at ${clock(Prefs.reminderHour.get(), Prefs.reminderMinute.get())}.", fontSize = 13.sp, color = c.muted)
             }
         }
         BottomBar { PostButton("Save event", ::save, Modifier.fillMaxWidth(), look = Look.STAMP, height = 52.dp, fontSize = 16) }

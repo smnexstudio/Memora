@@ -1,6 +1,16 @@
 package com.smnexstudio.memora.ui.screens
 
-import android.app.TimePickerDialog
+import androidx.core.app.NotificationManagerCompat
+import com.smnexstudio.memora.data.Diagnostics
+import com.smnexstudio.memora.platform.Send
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.festivalVersion
+import com.smnexstudio.memora.data.Prefs
+import com.smnexstudio.memora.ui.LinkText
+import com.smnexstudio.memora.reminders.AlertStyle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.provider.Settings
+import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,7 +46,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.border
@@ -83,8 +92,10 @@ import com.smnexstudio.memora.ui.PostButton
 import com.smnexstudio.memora.ui.RubberStamp
 import com.smnexstudio.memora.ui.Stamp
 import com.smnexstudio.memora.ui.SectionTitle
+import com.smnexstudio.memora.ui.Skin
 import com.smnexstudio.memora.ui.SwitchRow
 import com.smnexstudio.memora.ui.TabTitle
+import com.smnexstudio.memora.ui.TimeSheet
 import com.smnexstudio.memora.ui.UnderlineField
 import com.smnexstudio.memora.ui.ToggleChip
 import com.smnexstudio.memora.ui.WeightedChip
@@ -97,29 +108,36 @@ import java.time.ZoneId
 import kotlin.concurrent.thread
 
 @Composable
-fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String) -> Unit) {
+fun SettingsScreen(activity: MainActivity, themeMode: String, themeStyle: String, navigate: (Route) -> Unit) {
     val c = theme.c
     val context = LocalContext.current
     val app = context.applicationContext
-    val version by Repo.version.collectAsState()
-    val offsets = remember(version) { Repo.defaultOffsets() }
-    val hour = remember(version) { Repo.reminderHour() }
-    val minute = remember(version) { Repo.reminderMinute() }
-    val digest = remember(version) { Repo.getBool("weeklyDigest", true) }
-    val festivalCount = remember(version) { Repo.festivals().let { ids -> availableFestivals().count { it.id in ids } } }
-    val calendars = remember(version) { calendarsLabel(Repo.calendars()) }
-    val lock = remember(version) { activity.isLockEnabled() }
-    val lastBackup = remember(version) { Repo.getSetting("lastBackupAt", "").toLongOrNull() }
-    val eventCount = remember(version) { Repo.listEvents().size }
+    val settings by Repo.settings.collectAsState()
+    val offsets = Prefs.defaultOffsets.from(settings)
+    val hour = Prefs.reminderHour.from(settings)
+    val minute = Prefs.reminderMinute.from(settings)
+    val digest = Prefs.weeklyDigest.from(settings)
+    val alertStyle = Prefs.alertStyle.from(settings)
+    // Re-read when coming back from Android's settings page for full-screen alarms.
+    val resumed = LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState().value
+    val fullScreenOk = remember(resumed) { Reminders.canShowFullScreen(context) }
+    val festivalIds = Prefs.festivals.from(settings)
+    val festivalCount = remember(festivalIds, festivalVersion()) { availableFestivals().count { it.id in festivalIds } }
+    val calendars = calendarsLabel(Prefs.calendars.from(settings))
+    val lock = Prefs.appLock.from(settings)
+    val lastBackup = Prefs.lastBackupAt.from(settings)
+    val eventCount = Repo.events.collectAsState().value.size
     var confirmRestore by remember { mutableStateOf(false) }
-    var signature by remember { mutableStateOf(Repo.signature()) }
+    var confirmErase by remember { mutableStateOf(false) }
+    var signature by remember { mutableStateOf(Prefs.signature.get()) }
     var pinDialog by remember { mutableStateOf<PinStep?>(null) }
+    var pickTime by remember { mutableStateOf(false) }
     val (checks, _) = rememberChecks()
     val appVersion = remember { Updates.installedVersion(context) }
-    val update = remember(version) { Updates.available(context) }
-    val updateChecked = remember(version) { Updates.lastCheckedAt() }
-    val justUpdated = remember(version) { Updates.justInstalled(context) }
-    val autoUpdate = remember(version) { Updates.autoCheck() }
+    val update = remember(settings) { Updates.available(context) }
+    val updateChecked = Prefs.updateCheckedAt.from(settings)
+    val justUpdated = remember(settings) { Updates.justInstalled(context) }
+    val autoUpdate = Prefs.updateAuto.from(settings)
     var checking by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
@@ -140,7 +158,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                     val out = if (password.isNotEmpty()) BackupCrypto.encrypt(json, password) else json
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(out.toByteArray(Charsets.UTF_8)) }
                 }
-                Repo.setSetting("lastBackupAt", System.currentTimeMillis().toString())
+                Prefs.lastBackupAt.set(System.currentTimeMillis())
                 Toast.makeText(context, if (password.isNotEmpty()) "Backup saved with a password" else "Backup saved", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Backup failed: ${e.message}", Toast.LENGTH_LONG).show()
@@ -149,9 +167,31 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
         }
     }
 
+    /** Empties Memora: alarms, database, card pictures, diagnostics and notifications; settings go back to their defaults. */
+    fun eraseEverything() {
+        busy = true
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                Repo.listEvents().forEach { Reminders.cancelEvent(app, it.id) }
+                Repo.eraseAll()
+                Reminders.syncAll(app)
+                Send.clearAllCards(app)
+                Diagnostics.clear(app)
+            }
+            NotificationManagerCompat.from(app).cancelAll()
+            activity.finishTurnOff()
+            activity.setTheme(Prefs.themeMode.get())
+            activity.setStyle(Prefs.themeStyle.get())
+            signature = ""
+            busy = false
+            Toast.makeText(context, "Everything in Memora has been erased.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     fun restore(text: String) {
         val n = Repo.importJson(text)
-        activity.setTheme(Repo.getSetting("themeMode", "system"))
+        activity.setTheme(Prefs.themeMode.get())
+        activity.setStyle(Prefs.themeStyle.get())
         thread { GoogleHolidays.ensure(force = true); Reminders.syncAll(app) }
         Toast.makeText(context, "$n event${if (n == 1) "" else "s"} restored and reminders set up again.", Toast.LENGTH_LONG).show()
     }
@@ -169,12 +209,18 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
         }
     }
 
+    if (pickTime) TimeSheet("Reminder time", "For on-the-day and early reminders", hour, minute, { pickTime = false }) { h, m ->
+        pickTime = false
+        Prefs.reminderHour.set(h); Prefs.reminderMinute.set(m)
+        thread { Reminders.syncAll(app) }
+    }
+
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         TabTitle("Settings", Modifier.statusBarsPadding().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 6.dp))
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
             update?.let { u ->
                 Row(
-                    Modifier.fillMaxWidth().background(c.festivalBg).dashedBorder(c.festival, 2.dp).clickable(role = Role.Button) { navigate("update") }.padding(14.dp),
+                    Modifier.fillMaxWidth().background(c.festivalBg).dashedBorder(c.festival, 2.dp).clickable(role = Role.Button) { navigate(Route.Update) }.padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Stamp(u.version.substringBeforeLast('.'), c.festival, filled = true, width = 40.dp, height = 48.dp, fontSize = 12)
@@ -187,7 +233,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
             }
 
             if (checks.failing > 0) Row(
-                Modifier.fillMaxWidth().background(c.paper).dashedBorder(c.stamp, 2.dp).clickable(role = Role.Button) { navigate("checks") }.padding(14.dp),
+                Modifier.fillMaxWidth().background(c.paper).dashedBorder(c.stamp, 2.dp).clickable(role = Role.Button) { navigate(Route.Checks) }.padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Box(Modifier.size(40.dp).clip(CircleShape).background(c.stamp), contentAlignment = Alignment.Center) { LineIcon(Ic.ALERT, c.onStamp, size = 20) }
@@ -202,12 +248,26 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
             }
 
             Section("Reminders") {
-                CardRow("Reminder time", "For on-the-day and early reminders", onClick = {
-                    TimePickerDialog(context, { _, h, m ->
-                        Repo.setSetting("reminderHour", h.toString()); Repo.setSetting("reminderMinute", m.toString())
-                        thread { Reminders.syncAll(app) }
-                    }, hour, minute, false).show()
-                }) { Handwriting(clock(hour, minute).lowercase(), size = 26, bold = true, color = c.stamp) }
+                CardRow("Reminder time", "For on-the-day and early reminders", onClick = { pickTime = true }) { Handwriting(clock(hour, minute).lowercase(), size = 26, bold = true, color = c.stamp) }
+                DashedDivider()
+                Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("How to remind", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AlertStyle.entries.forEach { s ->
+                            WeightedChip(s.label, alertStyle == s, { Prefs.alertStyle.set(s) })
+                        }
+                    }
+                    Text(alertStyle.hint + if (alertStyle.rings) " Festivals and the weekly digest stay as notifications." else "", fontSize = 13.sp, color = c.muted)
+                    if (alertStyle.rings && !fullScreenOk) LinkText(
+                        "Allow alarms to fill the screen",
+                        {
+                            context.startActivity(
+                                Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${context.packageName}")),
+                            )
+                        },
+                        color = c.stamp,
+                    )
+                }
                 DashedDivider()
                 Column(Modifier.padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Early reminders for new events", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
@@ -220,7 +280,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                                     !on && offsets.size < 2 -> (offsets + days).sortedDescending()
                                     else -> offsets
                                 }
-                                Repo.setSetting("defaultOffsets", next.joinToString(",", "[", "]"))
+                                Prefs.defaultOffsets.set(next)
                             }, enabled = on || offsets.size < 2)
                         }
                     }
@@ -228,18 +288,24 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                 }
                 DashedDivider()
                 SwitchRow("Weekly digest", "A Sunday note about the week ahead", digest, {
-                    Repo.setBool("weeklyDigest", it)
+                    Prefs.weeklyDigest.set(it)
                     thread { Reminders.syncAll(app) }
                 })
                 DashedDivider()
                 CardRow(
                     "Festivals", "$calendars, ${if (festivalCount == 0) "none switched on" else "$festivalCount switched on"}",
-                    onClick = { navigate("festivals") },
+                    onClick = { navigate(Route.Festivals) },
                 ) { Chevron() }
             }
 
             Section("Appearance", padded = true) {
                 Text("Theme", fontWeight = FontWeight.SemiBold, color = c.ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Skin.entries.forEach { skin ->
+                        WeightedChip(skin.label, themeStyle == skin.id, { activity.setStyle(skin.id) })
+                    }
+                }
+                Text("Mode", Modifier.padding(top = 6.dp), fontWeight = FontWeight.SemiBold, color = c.ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("system" to "System", "light" to "Light", "dark" to "Dark").forEach { (mode, label) ->
                         WeightedChip(label, themeMode == mode, { activity.setTheme(mode) })
@@ -248,10 +314,22 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
             }
 
             Section("Home-screen widget", padded = true) {
-                CardRow("Widget", widgetSummary(lock), onClick = { navigate("widget") }) { Chevron() }
+                CardRow("Widget", widgetSummary(lock), onClick = { navigate(Route.Widget) }) { Chevron() }
             }
 
             Section("Privacy") {
+                SwitchRow(
+                    "Hide names on the lock screen",
+                    if (lock) "Always, while app lock is on" else "Reminders say “You have a reminder” until you unlock",
+                    lock || Prefs.hideOnLockScreen.from(settings), { Prefs.hideOnLockScreen.set(it) }, enabled = !lock,
+                )
+                DashedDivider()
+                SwitchRow(
+                    "Hide from screenshots",
+                    if (lock) "Always, while app lock is on" else "Also keeps Memora's screen out of Recents and screen recordings",
+                    lock || Prefs.blockScreenshots.from(settings), { Prefs.blockScreenshots.set(it); activity.applyPrivacy() }, enabled = !lock,
+                )
+                DashedDivider()
                 SwitchRow("App lock", "Fingerprint, phone screen lock or your Memora PIN", lock, { on ->
                     when {
                         on -> pinDialog = PinStep.SET_FOR_LOCK
@@ -273,12 +351,18 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
             }
 
             Section("Cards", padded = true) {
-                UnderlineField("Sign cards as", signature, { signature = it.take(40); Repo.setSetting("signature", signature.trim()) }, placeholder = "Your name or initials, e.g. SM")
+                UnderlineField("Sign cards as", signature, { signature = it.take(40); Prefs.signature.set(signature.trim()) }, placeholder = "Your name or initials, e.g. SM")
                 Text("Shown as “— ${signature.trim().ifBlank { "SM" }}” at the end of postcard wishes.", fontSize = 13.sp, color = c.muted)
+                LinkText("Delete cards saved to the gallery", {
+                    scope.launch {
+                        val n = withContext(Dispatchers.IO) { Send.deleteSavedCards(app) }
+                        Toast.makeText(context, if (n == 0) "No saved cards to delete" else "Deleted $n saved card${if (n == 1) "" else "s"}", Toast.LENGTH_SHORT).show()
+                    }
+                })
             }
 
             Section("Your people", padded = true) {
-                CardRow("Import from contacts", "Birthdays and anniversaries saved on your phone", onClick = { navigate("import") }) { Chevron() }
+                CardRow("Import from contacts", "Birthdays and anniversaries saved on your phone", onClick = { navigate(Route.Import) }) { Chevron() }
             }
 
             Section("Backup and restore", padded = true) {
@@ -294,6 +378,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                     PostButton("Restore", { confirmRestore = true }, Modifier.weight(1f), look = Look.OUTLINE)
                 }
                 Text("Save it to Drive or Downloads. Backups from Memora 1.x restore too.", fontSize = 13.sp, color = c.muted)
+                LinkText("Erase everything", { confirmErase = true }, color = c.stamp)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,7 +413,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (update != null) PostButton("See what’s new", { navigate("update") }, Modifier.weight(1f), height = 46.dp)
+                            if (update != null) PostButton("See what’s new", { navigate(Route.Update) }, Modifier.weight(1f), height = 46.dp)
                             PostButton(
                                 if (checking) "Checking…" else if (update != null) "Check again" else "Check for updates",
                                 {
@@ -339,7 +424,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
                                         when (result) {
                                             CheckResult.FAILED -> Toast.makeText(context, "Couldn’t reach GitHub. Check the connection and try again.", Toast.LENGTH_LONG).show()
                                             CheckResult.LATEST -> Toast.makeText(context, "You have the latest version", Toast.LENGTH_SHORT).show()
-                                            CheckResult.NEWER -> if (Updates.available(app) != null) navigate("update")
+                                            CheckResult.NEWER -> if (Updates.available(app) != null) navigate(Route.Update)
                                         }
                                     }
                                 },
@@ -379,6 +464,7 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
         confirm = "Back up",
         confirmTwice = true,
         allowEmpty = true,
+        // Without a password is a separate, deliberate choice, not what an empty field quietly does.
         minLength = MIN_BACKUP_PASSWORD,
         onDismiss = { askBackupPassword = false },
     ) { pw ->
@@ -407,6 +493,22 @@ fun SettingsScreen(activity: MainActivity, themeMode: String, navigate: (String)
             }
         }
     }
+
+    if (confirmErase) AlertDialog(
+        onDismissRequest = { confirmErase = false },
+        containerColor = c.paper,
+        title = { Text("Erase everything?", color = c.ink) },
+        text = {
+            Text(
+                "Every person, note, card history and setting in Memora on this phone, and the PIN, will be deleted. This can’t be undone. Back up first if you might want them again.",
+                color = c.muted,
+            )
+        },
+        confirmButton = {
+            TextButton({ confirmErase = false; eraseEverything() }) { Text("Erase", fontWeight = FontWeight.Bold, color = c.stamp) }
+        },
+        dismissButton = { TextButton({ confirmErase = false }) { Text("Cancel", color = c.muted) } },
+    )
 
     if (confirmRestore) AlertDialog(
         onDismissRequest = { confirmRestore = false },
@@ -443,7 +545,7 @@ private fun checkedLabel(at: Long): String {
 }
 
 private const val MAX_BACKUP_BYTES = 5 * 1024 * 1024
-private const val MIN_BACKUP_PASSWORD = 6
+private const val MIN_BACKUP_PASSWORD = 8
 
 /** Reads at most [limit] bytes. */
 private fun java.io.InputStream.readAtMost(limit: Int): ByteArray {
@@ -485,15 +587,20 @@ private fun PasswordDialog(
                 if (confirmTwice && pw.isNotEmpty()) PasswordField("Type it again", again) { again = it }
                 if (tooShort) Text("Use at least $minLength characters.", fontSize = 13.sp, color = c.stamp)
                 if (mismatch && again.isNotEmpty()) Text("The passwords don’t match.", fontSize = 13.sp, color = c.stamp)
-                if (allowEmpty && pw.isEmpty()) Text("Leave it empty to save without a password.", fontSize = 13.sp, color = c.muted)
+                if (allowEmpty) Text("Anyone who gets a backup without a password, on a shared drive or cloud folder say, can read all of it.", fontSize = 13.sp, color = c.muted)
             }
         },
         confirmButton = {
-            TextButton({ onConfirm(pw) }, enabled = !mismatch && !tooShort && (allowEmpty || pw.isNotEmpty())) {
-                Text(if (allowEmpty && pw.isEmpty()) "$confirm without password" else confirm, fontWeight = FontWeight.Bold, color = c.ink)
+            TextButton({ onConfirm(pw) }, enabled = pw.isNotEmpty() && !tooShort && !(confirmTwice && again != pw)) {
+                Text(confirm, fontWeight = FontWeight.Bold, color = c.ink)
             }
         },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel", color = c.muted) } },
+        dismissButton = {
+            Row {
+                if (allowEmpty) TextButton({ onConfirm("") }) { Text("No password", color = c.muted) }
+                TextButton(onDismiss) { Text("Cancel", color = c.muted) }
+            }
+        },
     )
 }
 

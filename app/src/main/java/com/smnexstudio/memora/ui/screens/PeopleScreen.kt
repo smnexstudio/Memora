@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.rememberAgenda
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
@@ -19,7 +22,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,12 +37,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.smnexstudio.memora.data.EventType
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.logic.MONTHS
 import com.smnexstudio.memora.logic.daysUntil
-import com.smnexstudio.memora.logic.nextDate
+import com.smnexstudio.memora.logic.yearsOn
+import com.smnexstudio.memora.ui.BoardHeader
+import com.smnexstudio.memora.ui.BoardLabel
+import com.smnexstudio.memora.ui.DepartureRow
+import com.smnexstudio.memora.ui.Mono
+import com.smnexstudio.memora.ui.boardIn
 import com.smnexstudio.memora.ui.DashedDivider
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Handwriting
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.LineIcon
@@ -58,24 +64,28 @@ import com.smnexstudio.memora.ui.theme
 import com.smnexstudio.memora.ui.whatLine
 
 @Composable
-fun PeopleScreen(navigate: (String) -> Unit) {
+fun PeopleScreen(navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
-    val version by Repo.version.collectAsState()
-    val events = remember(version) { Repo.listEvents() }
+    val agenda = rememberAgenda()
+    val events = agenda.events
     var soonest by rememberSaveable { mutableStateOf(false) }
     var type by rememberSaveable { mutableStateOf<String?>(null) }
 
-    val rows = remember(version, soonest, type) {
-        events.filter { type == null || it.type.id == type }
-            .map { it to nextDate(it) }
-            .let { list -> if (soonest) list.sortedBy { it.second } else list.sortedBy { it.first.name.lowercase() } }
+    val rows = remember(agenda, soonest, type) {
+        agenda.upcoming.filter { type == null || it.first.type.id == type }
+            .let { list -> if (soonest) list else list.sortedBy { it.first.name.lowercase() } }
     }
     val groups = if (soonest) listOf("" to rows) else rows.groupBy { it.first.name.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "#" }.toList()
     val people = events.map { it.name.trim().lowercase() }.distinct().size
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 8.dp)) {
-        item {
+        if (t.board) item {
+            BoardHeader(
+                "People", Modifier.statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
+                sub = "Directory · $people ${if (people == 1) "name" else "names"}",
+            )
+        } else item {
             Row(
                 Modifier.fillMaxWidth().statusBarsPadding().padding(start = 20.dp, end = 14.dp, top = 16.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.Bottom,
@@ -84,18 +94,18 @@ fun PeopleScreen(navigate: (String) -> Unit) {
                     "People", Modifier.weight(1f),
                     below = "$people ${if (people == 1) "person" else "people"}, ${events.size} date${if (events.size == 1) "" else "s"} to remember",
                 )
-                PostButton("From contacts", { navigate("import") }, look = Look.OUTLINE, height = 40.dp, fontSize = 14)
+                PostButton("From contacts", { navigate(Route.Import) }, look = Look.OUTLINE, height = 40.dp, fontSize = 14)
             }
         }
         item {
-            val shape = RoundedCornerShape(4.dp)
+            val shape = RoundedCornerShape(if (t.board) 10.dp else 4.dp)
             Row(
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp).fillMaxWidth().heightIn(min = 48.dp).clip(shape).background(c.paper)
-                    .border(1.5.dp, c.ink, shape).clickable(role = Role.Button) { navigate("search") }.padding(horizontal = 14.dp),
+                    .border(1.5.dp, c.ink, shape).clickable(role = Role.Button) { navigate(Route.Search) }.padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 LineIcon(Ic.SEARCH, c.muted, size = 18)
-                Text("Search names, notes, phone, email", fontSize = 15.sp, color = c.muted)
+                if (t.board) Mono("Search names, notes, phone…", size = 12) else Text("Search names, notes, phone, email", fontSize = 15.sp, color = c.muted)
             }
         }
         item {
@@ -103,6 +113,7 @@ fun PeopleScreen(navigate: (String) -> Unit) {
                 Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (t.board) ToggleChip("From contacts", false, { navigate(Route.Import) })
                 ToggleChip("A to Z", !soonest, { soonest = false })
                 ToggleChip("Soonest first", soonest, { soonest = true })
                 ToggleChip("Birthdays", type == EventType.BIRTHDAY.id, { type = if (type == EventType.BIRTHDAY.id) null else EventType.BIRTHDAY.id }, dot = t.type(EventType.BIRTHDAY))
@@ -114,23 +125,35 @@ fun PeopleScreen(navigate: (String) -> Unit) {
             Box(Modifier.padding(16.dp)) {
                 PaperCard(tilt = -0.8f, padding = PaddingValues(18.dp)) {
                     Handwriting("No one here yet. Add a birthday, or bring in the ones saved in your contacts.", size = 23)
-                    PostButton("Add an event", { navigate("edit") }, Modifier.fillMaxWidth())
+                    PostButton("Add an event", { navigate(Route.Edit()) }, Modifier.fillMaxWidth())
                 }
             }
         }
-        groups.forEach { (letter, list) ->
+        if (t.board) groups.forEach { (letter, list) ->
+            if (letter.isNotEmpty()) item(key = "group-$letter") { BoardLabel(letter) }
+            items(list, key = { "row-${it.first.id}" }) { (e, d) ->
+                val n = daysUntil(d)
+                DepartureRow(
+                    flap = "${d.dayOfMonth}", name = rowTitle(e),
+                    meta = "${e.type.label} · ${d.dayOfMonth} ${MONTHS[d.monthValue - 1].take(3)}" +
+                        (yearsOn(e, d)?.let { y -> if (e.type == EventType.BIRTHDAY) " · turns $y" else " · $y yrs" } ?: ""),
+                    whenText = boardIn(n), whenColor = if (n == 0) c.ok else null, flapColor = t.type(e.type), now = n == 0,
+                    onClick = { navigate(Route.Event(e.id)) },
+                )
+            }
+        } else groups.forEach { (letter, list) ->
             item(key = "group-$letter") {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     if (letter.isNotEmpty()) Text(
                         letter, Modifier.padding(start = 4.dp, top = 10.dp, bottom = 6.dp),
-                        fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.stamp,
+                        fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.stamp,
                     )
                     Column(Modifier.fillMaxWidth().paper(c.paper, c.shadow)) {
                         list.forEachIndexed { i, (e, d) ->
                             if (i > 0) DashedDivider()
                             val n = daysUntil(d)
                             Row(
-                                Modifier.fillMaxWidth().clickable(role = Role.Button) { navigate("event/${e.id}") }.padding(horizontal = 14.dp, vertical = 10.dp),
+                                Modifier.fillMaxWidth().clickable(role = Role.Button) { navigate(Route.Event(e.id)) }.padding(horizontal = 14.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
                                 Stamp(initials(e.name), t.type(e.type), width = 40.dp, height = 46.dp, fontSize = 15)

@@ -1,5 +1,6 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.data.Prefs
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
@@ -47,7 +48,7 @@ import com.smnexstudio.memora.reminders.Reminders
 import com.smnexstudio.memora.ui.BottomBar
 import com.smnexstudio.memora.ui.DashedDivider
 import com.smnexstudio.memora.ui.Dot
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.LinkText
 import com.smnexstudio.memora.ui.Look
 import com.smnexstudio.memora.ui.PostButton
@@ -94,7 +95,7 @@ fun ImportScreen(onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
             ) {
-                Text("Contacts access is off", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink)
+                Text("Contacts access is off", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink)
                 Text("Allow Memora to read contacts to bring in saved birthdays. Nothing leaves your phone.", fontSize = 15.sp, color = c.muted, textAlign = TextAlign.Center)
                 PostButton("Open settings", {
                     context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
@@ -116,7 +117,7 @@ fun ImportScreen(onBack: () -> Unit) {
                         Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 12.dp), fontSize = 15.sp, lineHeight = 22.sp, color = c.muted,
                     )
                     if (fresh.isNotEmpty()) Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${picked.size} selected", Modifier.weight(1f), fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontSize = 16.sp, color = c.ink)
+                        Text("${picked.size} selected", Modifier.weight(1f), fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontSize = 16.sp, color = c.ink)
                         LinkText(if (allOn) "Select none" else "Select all", { picked = if (allOn) emptySet() else fresh.map { it.key }.toSet() })
                     }
                     if (list.isNotEmpty()) Column(Modifier.padding(horizontal = 16.dp).fillMaxWidth().paper(c.paper, c.shadow)) {
@@ -147,7 +148,7 @@ fun ImportScreen(onBack: () -> Unit) {
                 if (fresh.isNotEmpty()) BottomBar {
                     PostButton(
                         if (picked.isEmpty()) "Pick at least one" else "Import ${picked.size} event${if (picked.size == 1) "" else "s"}", {
-                            val offsets = Repo.defaultOffsets()
+                            val offsets = Prefs.defaultOffsets.get()
                             Repo.saveEvents(
                                 list.filter { it.key in picked }.map { x ->
                                     MemoraEvent(

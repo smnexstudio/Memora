@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.data.Setting
+import com.smnexstudio.memora.data.Prefs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,9 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,7 +36,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.ui.CardRow
 import com.smnexstudio.memora.ui.DashedDivider
 import com.smnexstudio.memora.ui.Handwriting
@@ -65,14 +63,13 @@ fun widgetSummary(lockOn: Boolean): String = when {
 fun WidgetSettingsScreen(onBack: () -> Unit) {
     val c = theme.c
     val context = LocalContext.current
-    val version by Repo.version.collectAsState()
-    val mode = remember(version) { WidgetPrefs.locked() }
-    val ages = remember(version) { WidgetPrefs.ages() }
-    val festivals = remember(version) { WidgetPrefs.festivals() }
-    val rows = remember(version) { WidgetPrefs.rows() }
+    val mode = Prefs.widgetLocked.current
+    val ages = Prefs.widgetAges.current
+    val festivals = Prefs.widgetFestivals.current
+    val rows = Prefs.widgetRows.current
 
-    fun changed(key: String, value: String) {
-        Repo.setSetting(key, value)
+    fun <T> changed(setting: Setting<T>, value: T) {
+        setting.set(value)
         NextEventsWidget.updateAll(context)
     }
 
@@ -107,24 +104,24 @@ fun WidgetSettingsScreen(onBack: () -> Unit) {
                 Choice(
                     "How many events, and the next date", "“2 events today” or “Nothing today, next Mon 12 Oct”",
                     mode == LockedWidget.COUNT,
-                ) { changed("widgetLocked", LockedWidget.COUNT.id) }
-                Choice("Nothing at all", "Just the Memora name", mode == LockedWidget.NOTHING) { changed("widgetLocked", LockedWidget.NOTHING.id) }
+                ) { changed(Prefs.widgetLocked, LockedWidget.COUNT) }
+                Choice("Nothing at all", "Just the Memora name", mode == LockedWidget.NOTHING) { changed(Prefs.widgetLocked, LockedWidget.NOTHING) }
                 Choice(
                     "Names and events", "Same as with the lock off", mode == LockedWidget.FULL,
                     warning = "Anyone with your phone can read them without the password",
-                ) { changed("widgetLocked", LockedWidget.FULL.id) }
+                ) { changed(Prefs.widgetLocked, LockedWidget.FULL) }
             }
 
             PaperCard(padding = PaddingValues(horizontal = 16.dp, vertical = 2.dp), gap = 0.dp) {
-                SwitchRow("Show ages", "Only when names are shown", ages, { changed("widgetAges", if (it) "1" else "0") })
+                SwitchRow("Show ages", "Only when names are shown", ages, { changed(Prefs.widgetAges, it) })
                 DashedDivider()
-                SwitchRow("Include festivals", "The festivals you switched on", festivals, { changed("widgetFestivals", if (it) "1" else "0") })
+                SwitchRow("Include festivals", "The festivals you switched on", festivals, { changed(Prefs.widgetFestivals, it) })
                 DashedDivider()
                 CardRow("Events to list", "On the large widget, when there’s room") {
                     Handwriting("next $rows", size = 24, bold = true, color = c.stamp)
                 }
                 Row(Modifier.padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    (1..5).forEach { n -> ToggleChip("$n", rows == n, { changed("widgetRows", "$n") }, Modifier.weight(1f)) }
+                    (1..5).forEach { n -> ToggleChip("$n", rows == n, { changed(Prefs.widgetRows, n) }, Modifier.weight(1f)) }
                 }
             }
         }

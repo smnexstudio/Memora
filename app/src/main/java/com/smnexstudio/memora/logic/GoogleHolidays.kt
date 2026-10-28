@@ -1,5 +1,6 @@
 package com.smnexstudio.memora.logic
 
+import com.smnexstudio.memora.data.Prefs
 import com.smnexstudio.memora.data.FestivalRow
 import com.smnexstudio.memora.data.Repo
 import java.net.HttpURLConnection
@@ -42,10 +43,10 @@ object GoogleHolidays {
     /** Years with stored festivals, e.g. [2026, 2027]. */
     fun storedYears(): List<Int> = dates.values.flatMap { it.keys }.distinct().sorted()
 
-    private fun wanted() = chosenCalendars(Repo.calendars()).joinToString(",") { it.code }
+    private fun wanted() = chosenCalendars(Prefs.calendars.get()).joinToString(",") { it.code }
 
     private fun complete(): Boolean {
-        if (Repo.festivalCalendars() != wanted()) return false
+        if (Prefs.festivalCalendars.get() != wanted()) return false
         val stored = dates.values.flatMap { it.keys }.toSet()
         return years().all { it in stored }
     }
@@ -61,11 +62,11 @@ object GoogleHolidays {
     fun ensure(force: Boolean = false, refresh: Boolean = false): Boolean {
         load()
         if (complete() && !refresh) return false
-        val lastAttempt = Repo.getSetting("festivalAttemptAt", "0").toLongOrNull() ?: 0
+        val lastAttempt = Prefs.festivalAttemptAt.get() ?: 0
         if (!force && System.currentTimeMillis() - lastAttempt in 0 until RETRY_MS) return false
-        Repo.setSetting("festivalAttemptAt", System.currentTimeMillis().toString())
+        Prefs.festivalAttemptAt.set(System.currentTimeMillis())
 
-        val calendars = chosenCalendars(Repo.calendars())
+        val calendars = chosenCalendars(Prefs.calendars.get())
         val rows = try {
             // The first calendar wins when both list the same festival (e.g. Christmas).
             calendars.flatMap { parse(download(feed(it))) }.distinctBy { it.id to it.date.year }
@@ -74,7 +75,7 @@ object GoogleHolidays {
         }
         if (rows.isEmpty()) return false
         Repo.replaceFestivalRows(calendars.joinToString(",") { it.code }, rows)
-        Repo.setSetting("festivalFetchedAt", System.currentTimeMillis().toString())
+        Prefs.festivalFetchedAt.set(System.currentTimeMillis())
         load()
         return true
     }

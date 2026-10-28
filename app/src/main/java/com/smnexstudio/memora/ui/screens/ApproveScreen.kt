@@ -1,14 +1,13 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.data.Prefs
 import android.graphics.Bitmap
-import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -45,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import com.smnexstudio.memora.ui.ScriptFont
 import com.smnexstudio.memora.ui.Handwriting
 import com.smnexstudio.memora.ui.Stamp
 import com.smnexstudio.memora.ui.stampText
@@ -92,8 +92,7 @@ import com.smnexstudio.memora.logic.today
 import com.smnexstudio.memora.logic.yearsOn
 import com.smnexstudio.memora.platform.Send
 import com.smnexstudio.memora.reminders.Reminders
-import com.smnexstudio.memora.ui.CircleIconButton
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.IconTap
 import com.smnexstudio.memora.ui.LineIcon
@@ -101,7 +100,6 @@ import com.smnexstudio.memora.ui.LinedField
 import com.smnexstudio.memora.ui.LinkText
 import com.smnexstudio.memora.ui.Look
 import com.smnexstudio.memora.ui.PaperCard
-import com.smnexstudio.memora.ui.PaperSwitch
 import com.smnexstudio.memora.ui.PostButton
 import com.smnexstudio.memora.ui.ReadyWishesSheet
 import com.smnexstudio.memora.ui.RubberStamp
@@ -173,7 +171,7 @@ private fun ChooseHow(e: MemoraEvent, date: LocalDate, onPick: (Channel) -> Unit
             IconTap(Ic.CLOSE, "Close", onClose)
             Text(
                 "Post it to $first", Modifier.padding(start = 4.dp),
-                fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink,
+                fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink,
             )
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
@@ -181,7 +179,7 @@ private fun ChooseHow(e: MemoraEvent, date: LocalDate, onPick: (Channel) -> Unit
 
             Text(
                 "Send it by", Modifier.padding(start = 4.dp, top = 28.dp, bottom = 12.dp),
-                fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.ink,
+                fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = c.ink,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 listOf(
@@ -235,7 +233,7 @@ private fun Envelope(e: MemoraEvent, date: LocalDate, detail: String, modifier: 
     val navy = c.ink
     val paperColor = c.paper
     Box(
-        modifier.fillMaxWidth().height(200.dp).rotate(-1.5f)
+        modifier.fillMaxWidth().height(200.dp).rotate(if (theme.board) 0f else -1.5f)
             .drawBehind {
                 drawRect(c.shadow, topLeft = Offset(0f, 2.dp.toPx()), size = size)
                 drawRect(paperColor)
@@ -258,7 +256,7 @@ private fun Envelope(e: MemoraEvent, date: LocalDate, detail: String, modifier: 
         Stamp(stampText(e, date), t.type(e.type), Modifier.align(Alignment.TopEnd), filled = true, width = 54.dp, height = 64.dp, fontSize = 22)
         val pm = today()
         Box(
-            Modifier.align(Alignment.TopEnd).padding(top = 38.dp, end = 38.dp).size(56.dp).rotate(-14f)
+            Modifier.align(Alignment.TopEnd).padding(top = 38.dp, end = 38.dp).size(56.dp).rotate(if (theme.board) 0f else -14f)
                 .border(2.dp, navy.copy(alpha = 0.4f), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
@@ -269,7 +267,7 @@ private fun Envelope(e: MemoraEvent, date: LocalDate, detail: String, modifier: 
             )
         }
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth(0.72f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("To", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontSize = 14.sp, color = c.muted)
+            Text("To", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontSize = 14.sp, color = c.muted)
             Handwriting(e.name, size = 32, bold = true, lineHeight = 34)
             Box(Modifier.fillMaxWidth().height(1.dp).background(navy))
             Text(detail, fontSize = 13.sp, color = c.muted, maxLines = 1)
@@ -319,9 +317,9 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
     val c = t.c
     val context = LocalContext.current
     val first = firstName(e)
-    val signature = remember { Repo.signature() }
+    val signature = remember { Prefs.signature.get() }
     val canPostcard = channel != Channel.SMS
-    var postcard by rememberSaveable { mutableStateOf(canPostcard && Repo.getSetting("sendMode/${channel.id}", "postcard") == "postcard") }
+    var postcard by rememberSaveable { mutableStateOf(canPostcard && Prefs.sendMode(channel).get() == "postcard") }
 
     val mine = fillMessage(if (belated) Templates.belated(e.type) else e.message, e, date)
     var tone by rememberSaveable { mutableStateOf<String?>(null) }
@@ -329,10 +327,21 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
     var message by rememberSaveable { mutableStateOf(mine) }
     var showWishes by remember { mutableStateOf(false) }
 
-    var design by rememberSaveable { mutableStateOf(CardDesign.from(Repo.getSetting("cardDesign", "marigold")).id) }
-    var shape by rememberSaveable { mutableStateOf(if (channel == Channel.EMAIL) CardShape.POSTCARD.id else CardShape.from(Repo.getSetting("cardShape", "square")).id) }
+    // Each kind of event offers its own designs and remembers the last one used.
+    val designs = remember(e.type) { CardDesign.forType(e.type) }
+    var design by rememberSaveable {
+        mutableStateOf(
+            (CardDesign.entries.firstOrNull { it.id == Prefs.cardDesign(e.type).get() }?.takeIf { it in designs } ?: designs.first()).id,
+        )
+    }
+    var shape by rememberSaveable { mutableStateOf(if (channel == Channel.EMAIL) CardShape.POSTCARD.id else CardShape.from(Prefs.cardShape.get()).id) }
     var caption by rememberSaveable { mutableStateOf(captionFor(e, first, belated)) }
-    var saveCopy by rememberSaveable { mutableStateOf(Repo.getBool("saveCards", false)) }
+    // The greeting on the card, editable: "Happy Birthday" and "dear Ananya".
+    val defaultHeadline = headlineFor(e, belated)
+    val defaultToLine = if (e.type == EventType.ANNIVERSARY) e.name else "dear $first"
+    var headline by rememberSaveable { mutableStateOf(defaultHeadline) }
+    var toLine by rememberSaveable { mutableStateOf(defaultToLine) }
+    var saveCopy by rememberSaveable { mutableStateOf(Prefs.saveCards.get()) }
     var showAge by rememberSaveable { mutableStateOf(true) }
     var shortPublic by rememberSaveable { mutableStateOf(true) }
     var emailTo by rememberSaveable { mutableStateOf(e.email ?: "") }
@@ -355,8 +364,8 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
     }
 
     val content = CardContent(
-        headline = headlineFor(e, belated),
-        toLine = if (e.type == EventType.ANNIVERSARY) e.name else "dear $first",
+        headline = headline.trim(),
+        toLine = toLine.trim(),
         number = yearsOn(e, date)?.toString()?.takeIf { showAge || !isStatus },
         message = if (isStatus && shortPublic) publicLine(e, first) else message,
         signature = signature.ifBlank { null }?.takeIf { !isStatus },
@@ -377,11 +386,11 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
     fun done(msg: String) {
         Repo.markSent(e.id, date.year, channel.id, msg)
         NextEventsWidget.updateAll(context)
-        Repo.setSetting("sendMode/${channel.id}", if (postcard) "postcard" else "text")
+        Prefs.sendMode(channel).set(if (postcard) "postcard" else "text")
         if (postcard) {
-            Repo.setSetting("cardDesign", design)
-            if (channel == Channel.WHATSAPP) Repo.setSetting("cardShape", shape)
-            Repo.setBool("saveCards", saveCopy)
+            Prefs.cardDesign(e.type).set(design)
+            if (channel == Channel.WHATSAPP) Prefs.cardShape.set(shape)
+            Prefs.saveCards.set(saveCopy)
         }
         onBack()
     }
@@ -426,7 +435,7 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
             Column(Modifier.weight(1f).padding(start = 4.dp)) {
                 Text(
                     if (isStatus) "Status picture" else if (postcard) "A card for $first" else "A wish for $first",
-                    fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink,
+                    fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = c.ink,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -461,24 +470,41 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle("Design", italic = false, size = 17)
                     Row(Modifier.horizontalScroll(rememberScrollState()).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CardDesign.entries.forEach { d -> DesignSwatch(d, design == d.id, yearsOn(e, date)) { design = d.id } }
+                        designs.forEach { d -> DesignSwatch(d, design == d.id, yearsOn(e, date)) { design = d.id } }
                     }
                 }
                 // The picture itself
                 Box(
-                    Modifier.fillMaxWidth().aspectRatio(when (cardShape) { CardShape.SQUARE -> 1f; CardShape.POSTCARD -> 1500f / 2060f; CardShape.STATUS -> 1080f / 1920f })
-                        .let { if (cardShape == CardShape.STATUS) it.padding(horizontal = 40.dp) else it }
-                        .rotate(if (cardShape == CardShape.SQUARE) -0.8f else 0f).paper(c.paper, c.shadow),
+                    // Narrow the tall shapes first, then size the box to the picture, so there's no empty band.
+                    Modifier.fillMaxWidth()
+                        .let { if (cardShape != CardShape.SQUARE && CardDesign.from(design).letter || cardShape == CardShape.STATUS) it.padding(horizontal = 40.dp) else it }
+                        .aspectRatio(Cards.size(CardDesign.from(design), cardShape).let { (w, h) -> w.toFloat() / h })
+                        .rotate(if (cardShape == CardShape.SQUARE && !theme.board) -0.8f else 0f).paper(c.paper, c.shadow),
                     contentAlignment = Alignment.Center,
                 ) {
                     card?.let { Image(it.asImageBitmap(), "Card preview", Modifier.fillMaxSize()) } ?: CircularProgressIndicator(color = c.stamp)
                 }
             } else TextPreview(channel, if (channel == Channel.EMAIL) emailTo else phoneTo, subject, message)
 
+            // The greeting on the card
+            if (postcard) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionTitle("Greeting", Modifier.weight(1f), italic = false, size = 17)
+                    if (headline != defaultHeadline || toLine != defaultToLine) LinkText("Reset", { headline = defaultHeadline; toLine = defaultToLine })
+                }
+                PaperCard(padding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), gap = 12.dp) {
+                    UnderlineField("Heading", headline, { headline = it.take(40) }, placeholder = defaultHeadline, strong = true)
+                    UnderlineField("Under it", toLine, { toLine = it.take(40) }, placeholder = defaultToLine)
+                }
+            }
+
             // Message
             if (!isStatus || !shortPublic) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionTitle(if (postcard) "Message on the back" else "Message", Modifier.weight(1f), italic = false, size = 17)
+                    SectionTitle(
+                        if (!postcard) "Message" else if (CardDesign.from(design).letter) "Message on the card" else "Message on the back",
+                        Modifier.weight(1f), italic = false, size = 17,
+                    )
                     LinkText("More wishes", { showWishes = true })
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -518,7 +544,7 @@ private fun Composer(e: MemoraEvent, channel: Channel, date: LocalDate, belated:
                                 )
                             }
                             if (postcard) Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Caption under the picture", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
+                                Text("Caption under the picture", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
                                 TextArea(caption, { caption = it }, "Caption", minLines = 2)
                             }
                         } else Text("WhatsApp will ask where to share it. Pick My status at the top.", fontSize = 14.sp, color = c.muted)
@@ -696,7 +722,7 @@ private fun BoxScope.Swatch(d: CardDesign, number: Int?) {
             Box(Modifier.size(20.dp).rotate(45f).border(2.dp, Color(0xFFE8B23A)), contentAlignment = Alignment.Center) { Box(Modifier.size(7.dp).background(Color(0xFFE8B23A))) }
         }
         CardDesign.BIG_NUMBER -> Box(Modifier.fillMaxSize().background(navy), contentAlignment = Alignment.Center) {
-            Text(number?.toString() ?: "M", fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = Color(0xFFFFFDF8))
+            Text(number?.toString() ?: "M", fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 26.sp, color = Color(0xFFFFFDF8))
         }
         CardDesign.CONFETTI -> Box(Modifier.fillMaxSize().background(Color(0xFFFFFDF8)).drawBehind {
             val colors = listOf(red, navy, Color(0xFFF2A93B), Color(0xFF2E7060), Color(0xFF5B4E9A))
@@ -705,7 +731,54 @@ private fun BoxScope.Swatch(d: CardDesign, number: Int?) {
                 drawCircle(colors[i % colors.size], 2.5.dp.toPx(), Offset(rnd.nextFloat() * size.width, rnd.nextFloat() * size.height))
             }
         })
+        // Letter designs: their ground, a touch of their ornament and the script greeting.
+        CardDesign.LOVE_LETTER -> LetterSwatch(Color(0xFFC99A98), Color(0xFF2E2828), Color(0xFFB3263A)) {
+            drawRect(Color(0xFFFBF7F0), Offset(size.width * 0.12f, size.height * 0.08f), androidx.compose.ui.geometry.Size(size.width * 0.7f, size.height * 0.84f))
+        }
+        CardDesign.BLUSH -> LetterSwatch(Color(0xFFFCF6F2), Color(0xFF3F2A26), Color(0xFFEBA7AE)) {
+            drawLine(Color(0xFFF0BFC3), Offset(size.width * 0.15f, size.height * 0.88f), Offset(size.width * 0.85f, size.height * 0.88f), 3.dp.toPx())
+        }
+        CardDesign.RIBBONS -> LetterSwatch(Color(0xFFFDFEFF), Color(0xFF1E2A46), Color(0xFF8EAEE6)) {
+            drawRect(Color(0xFF8EAEE6), Offset(4.dp.toPx(), 4.dp.toPx()), androidx.compose.ui.geometry.Size(size.width - 8.dp.toPx(), size.height - 8.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+        }
+        CardDesign.PARTY -> LetterSwatch(Color(0xFFF7F2EA), Color(0xFF2B2B2B), Color(0xFFE88AA6)) {
+            val flags = listOf(Color(0xFFFBE08A), Color(0xFFF6B8CB), Color(0xFFA9D2F2), Color(0xFFCDB8F0), Color(0xFFBFE2B3))
+            val w = size.width / flags.size
+            flags.forEachIndexed { i, col ->
+                drawPath(androidx.compose.ui.graphics.Path().apply { moveTo(i * w + 2, 0f); lineTo((i + 1) * w - 2, 0f); lineTo(i * w + w / 2, 10.dp.toPx()); close() }, col)
+            }
+        }
+        CardDesign.GOLDEN -> LetterSwatch(Color(0xFFFBF6EC), Color(0xFF3A2E22), Color(0xFFC29B4A)) {
+            listOf(-1f, 1f).forEach { d -> drawCircle(Color(0xFFC29B4A), 7.dp.toPx(), Offset(size.width / 2 + d * 4.dp.toPx(), 11.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx())) }
+        }
+        CardDesign.PLAIN -> QuietSwatch(Color(0xFFFBFAF7), Color(0xFF2F2F2F), Color(0xFFB5B0A6))
+        CardDesign.CLASSIC -> QuietSwatch(Color(0xFF1F2C44), Color(0xFFF4EBD8), Color(0xFFCFAE68))
+        CardDesign.MEMORY -> QuietSwatch(Color(0xFFF2F0EB), Color(0xFF3B4048), Color(0xFFC9C5BC))
+        CardDesign.WILDFLOWER -> LetterSwatch(Color(0xFFFBF3EF), Color(0xFF6E5444), Color(0xFFCF8A88)) {
+            listOf(0.12f, 0.2f, 0.8f, 0.88f).forEach { x -> drawCircle(Color(0xFFCF8A88), 3.dp.toPx(), Offset(size.width * x, size.height * 0.78f)) }
+        }
     }
+}
+
+/** A letter design's sample: its ground, an ornament, and "Aa" in its script. */
+@Composable
+private fun LetterSwatch(ground: Color, ink: Color, accent: Color, ornament: androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit) {
+    Box(Modifier.fillMaxSize().background(ground).drawBehind(ornament), contentAlignment = Alignment.Center) {
+        Text("Aa", fontFamily = ScriptFont, fontSize = 26.sp, color = ink)
+        Box(Modifier.align(Alignment.TopEnd).padding(5.dp).size(7.dp).clip(CircleShape).background(accent))
+    }
+}
+
+/** A quiet design's sample: a thin frame and "Aa" in serif. */
+@Composable
+private fun QuietSwatch(ground: Color, ink: Color, rule: Color) {
+    Box(
+        Modifier.fillMaxSize().background(ground).drawBehind {
+            val o = 5.dp.toPx()
+            drawRect(rule, Offset(o, o), androidx.compose.ui.geometry.Size(size.width - 2 * o, size.height - 2 * o), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        },
+        contentAlignment = Alignment.Center,
+    ) { Text("Aa", fontFamily = DisplayFont, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, color = ink) }
 }
 
 /** How the plain text will look once it arrives. */

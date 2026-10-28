@@ -65,4 +65,4 @@ adb shell am broadcast -a com.android.systemui.demo -e command exit
 7. **Widget** on the home screen, in light and dark.
 8. **App lock**: skip this one, or use the mockup. While the lock is on, Android blocks every capture of Memora (including `adb screencap`), which is the point of it.
 
-Take each in light and dark (Settings → Theme). Save them as PNGs in `docs/images/`, for example `home-light.png`, and list them in the README where the screenshots comment is.
+Take each in light and dark (Settings → Mode), and in both looks if you want them (Settings → Theme: Postcard or Departures). Save them as PNGs in `docs/images/`, for example `home-light.png` or `home-board-dark.png`, and list them in the README where the screenshots comment is.

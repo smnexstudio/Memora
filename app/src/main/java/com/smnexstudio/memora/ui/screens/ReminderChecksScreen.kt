@@ -1,5 +1,11 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.LinkText
+import com.smnexstudio.memora.ui.clock
+import com.smnexstudio.memora.logic.shortDate
+import androidx.compose.runtime.collectAsState
+import com.smnexstudio.memora.data.Repo
+import com.smnexstudio.memora.data.Diagnostics
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -103,7 +109,43 @@ fun ReminderChecksScreen(onBack: () -> Unit) {
                 checks.battery, "Open battery settings", appSettings,
             )
             Handwriting("Reminders are rebuilt on their own after a restart, or when the time or time zone changes.", Modifier.padding(top = 8.dp, start = 4.dp, end = 4.dp), size = 22)
+            ReminderLog()
         }
+    }
+}
+
+/** When the next reminder is due, when reminders last went out, and anything Android refused. */
+@Composable
+private fun ReminderLog() {
+    val c = theme.c
+    val context = LocalContext.current
+    val events by Repo.events.collectAsState()
+    val next = remember(events) { Reminders.plan(events, Reminders.handledUntil()).firstOrNull() }
+    val log = remember(events) { Diagnostics.read(context) }
+    val sent = remember(log) { Diagnostics.last(context, "reminders sent")?.take(16) }
+    val refused = remember(log) { Diagnostics.last(context, "alarm refused")?.take(16) }
+    Column(
+        Modifier.fillMaxWidth().then(if (refused == null) Modifier.paper(c.paper, c.shadow) else Modifier.background(c.paper).dashedBorder(c.stamp, 2.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Reminder log", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = c.ink)
+        Text(
+            next?.let { "Next reminder: ${shortDate(it.at.toLocalDate())}, ${clock(it.at.hour, it.at.minute)}" } ?: "No reminders to send yet",
+            fontSize = 13.sp, color = c.muted,
+        )
+        Text(sent?.let { "Last sent: $it" } ?: "None sent on this phone yet", fontSize = 13.sp, color = c.muted)
+        if (refused != null) Text(
+            "On $refused Android refused to set a reminder. Open Memora once to set them again; if this keeps happening, share the log below.",
+            fontSize = 13.sp, color = c.stamp,
+        )
+        if (log.isNotEmpty()) LinkText("Share diagnostics", {
+            val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(Intent.EXTRA_SUBJECT, "Memora diagnostics")
+                .putExtra(Intent.EXTRA_TEXT, log)
+            context.startActivity(Intent.createChooser(send, "Share diagnostics"))
+        })
+        Text("The log records only what Memora did, never names or dates, and stays on this phone unless you share it.", fontSize = 12.sp, color = c.faint)
     }
 }
 

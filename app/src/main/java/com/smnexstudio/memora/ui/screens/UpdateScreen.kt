@@ -49,7 +49,7 @@ import com.smnexstudio.memora.platform.Release
 import com.smnexstudio.memora.platform.UpdateState
 import com.smnexstudio.memora.platform.Updates
 import com.smnexstudio.memora.ui.DashedDivider
-import com.smnexstudio.memora.ui.Fraunces
+import com.smnexstudio.memora.ui.DisplayFont
 import com.smnexstudio.memora.ui.Handwriting
 import com.smnexstudio.memora.ui.Ic
 import com.smnexstudio.memora.ui.LineIcon
@@ -127,7 +127,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.WhatsNew(release: Rel
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Stamp(release.version, c.festival, filled = true, width = 78.dp, height = 92.dp, fontSize = 22, caption = "new")
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text("Memora ${release.version}", fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 26.sp, color = c.ink)
+                        Text("Memora ${release.version}", fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp, lineHeight = 26.sp, color = c.ink)
                         Text("You have $installed" + (releasedOn(release)?.let { " · released $it" } ?: ""), fontSize = 14.sp, color = c.muted)
                         Text("${megabytes(release.apkSize)} download", fontSize = 14.sp, color = c.muted)
                     }
@@ -193,7 +193,7 @@ private fun androidx.compose.foundation.layout.ColumnScope.Downloading(release: 
     Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         PaperCard(Modifier.padding(top = 18.dp), padding = androidx.compose.foundation.layout.PaddingValues(start = 18.dp, end = 18.dp, top = 22.dp, bottom = 20.dp), gap = 14.dp) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
-                Text("${(fraction * 100).toInt()}%", Modifier.weight(1f), fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = 44.sp, lineHeight = 44.sp, color = c.ink)
+                Text("${(fraction * 100).toInt()}%", Modifier.weight(1f), fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = 44.sp, lineHeight = 44.sp, color = c.ink)
                 Text("${megabytes(read, unit = false)} of ${megabytes(release.apkSize)}", fontSize = 14.sp, color = c.muted)
             }
             Box(

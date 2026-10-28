@@ -16,17 +16,42 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
 import androidx.core.graphics.withTranslation
 import com.smnexstudio.memora.R
+import com.smnexstudio.memora.data.EventType
 
-/** The look of a card's front. */
-enum class CardDesign(val id: String, val label: String) {
-    MARIGOLD("marigold", "Marigold"),
-    AIRMAIL("airmail", "Airmail"),
-    RANGOLI("rangoli", "Rangoli"),
-    BIG_NUMBER("number", "Big number"),
-    CONFETTI("confetti", "Confetti");
+/**
+ * The look of a card, and which event [types] it suits. Postcard designs have a picture front and a
+ * written back; [letter] designs are one sheet with the greeting, the wish and the decoration together ([LetterCards]).
+ */
+enum class CardDesign(val id: String, val label: String, val letter: Boolean, vararg val types: EventType) {
+    // Birthdays
+    PARTY("party", "Party", true, EventType.BIRTHDAY),
+    BLUSH("blush", "Blush", true, EventType.BIRTHDAY),
+    RIBBONS("ribbons", "Ribbons", true, EventType.BIRTHDAY),
+    CONFETTI("confetti", "Confetti", false, EventType.BIRTHDAY),
+    MARIGOLD("marigold", "Marigold", false, EventType.BIRTHDAY),
+
+    // Anniversaries
+    LOVE_LETTER("loveletter", "Love letter", true, EventType.ANNIVERSARY),
+    GOLDEN("golden", "Golden rings", true, EventType.ANNIVERSARY),
+    WILDFLOWER("wildflower", "Wildflower", true, EventType.ANNIVERSARY),
+    RANGOLI("rangoli", "Rangoli", false, EventType.ANNIVERSARY),
+
+    // The age or the years, big
+    BIG_NUMBER("number", "Big number", false, EventType.BIRTHDAY, EventType.ANNIVERSARY),
+
+    // Other events can be a graduation or a remembrance, so nothing festive.
+    PLAIN("plain", "Plain", true, EventType.OTHER),
+    CLASSIC("classic", "Classic", true, EventType.OTHER),
+    MEMORY("memory", "In memory", true, EventType.OTHER),
+
+    // Suits anything
+    AIRMAIL("airmail", "Airmail", false, EventType.BIRTHDAY, EventType.ANNIVERSARY, EventType.OTHER);
 
     companion object {
         fun from(id: String?) = entries.firstOrNull { it.id == id } ?: MARIGOLD
+
+        /** The designs offered for an event type, in order. */
+        fun forType(type: EventType) = entries.filter { type in it.types }
     }
 }
 
@@ -68,6 +93,21 @@ object Cards {
     private class Fonts(val display: Typeface, val hand: Typeface, val handBold: Typeface, val sans: Typeface)
 
     @Volatile private var fonts: Fonts? = null
+    @Volatile private var letterFonts: LetterFonts? = null
+
+    private fun letterFonts(context: Context) = letterFonts ?: LetterFonts(
+        ResourcesCompat.getFont(context, R.font.great_vibes) ?: Typeface.SERIF,
+        ResourcesCompat.getFont(context, R.font.caveat_medium) ?: Typeface.DEFAULT,
+        ResourcesCompat.getFont(context, R.font.jetbrains_mono_variable) ?: Typeface.MONOSPACE,
+        ResourcesCompat.getFont(context, R.font.fraunces_semibold) ?: Typeface.SERIF,
+    ).also { letterFonts = it }
+
+    /** Pixel size of the picture for this design and shape. */
+    fun size(design: CardDesign, shape: CardShape): Pair<Int, Int> = if (design.letter) LetterCards.size(shape) else when (shape) {
+        CardShape.SQUARE -> 1080 to 1080
+        CardShape.POSTCARD -> 1500 to 2060
+        CardShape.STATUS -> 1080 to 1920
+    }
 
     private fun fonts(context: Context) = fonts ?: Fonts(
         ResourcesCompat.getFont(context, R.font.fraunces_extrabold_italic) ?: Typeface.SERIF,
@@ -77,6 +117,10 @@ object Cards {
     ).also { fonts = it }
 
     fun render(context: Context, design: CardDesign, shape: CardShape, c: CardContent, showNumber: Boolean = true): Bitmap {
+        if (design.letter) {
+            val (w, h) = LetterCards.size(shape)
+            return createBitmap(w, h).also { LetterCards.draw(Canvas(it), w.toFloat(), h.toFloat(), design, c, letterFonts(context)) }
+        }
         val f = fonts(context)
         return when (shape) {
             CardShape.SQUARE -> createBitmap(1080, 1080).also { bmp ->
@@ -170,7 +214,7 @@ object Cards {
                 }
                 ink = PAPER; toColor = 0xFFF2A93B.toInt()
             }
-            CardDesign.CONFETTI -> {
+            else -> {
                 cv.drawRect(r, fill(PAPER))
                 val colors = intArrayOf(RED, NAVY, 0xFFF2A93B.toInt(), 0xFF2E7060.toInt(), 0xFF5B4E9A.toInt())
                 val rnd = java.util.Random(7)

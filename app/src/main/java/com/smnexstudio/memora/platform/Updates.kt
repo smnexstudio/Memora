@@ -1,5 +1,6 @@
 package com.smnexstudio.memora.platform
 
+import com.smnexstudio.memora.data.Prefs
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
@@ -16,7 +17,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.smnexstudio.memora.R
-import com.smnexstudio.memora.data.Repo
 import com.smnexstudio.memora.reminders.openAppIntent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,22 +101,22 @@ object Updates {
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "0.0.0"
 
     /** The last release seen on GitHub, from the most recent check. */
-    fun latest(): Release? = Repo.getSetting("updateLatest", "").takeIf { it.isNotEmpty() }?.let(Release::fromJson)
+    fun latest(): Release? = Prefs.updateLatest.get().takeIf { it.isNotEmpty() }?.let(Release::fromJson)
 
     /** The release to offer: newer than this install and not skipped. */
     fun available(context: Context): Release? =
-        latest()?.takeIf { isNewer(it.version, installedVersion(context)) && it.version != Repo.getSetting("updateSkip", "") }
+        latest()?.takeIf { isNewer(it.version, installedVersion(context)) && it.version != Prefs.updateSkip.get() }
 
-    fun lastCheckedAt(): Long? = Repo.getSetting("updateCheckedAt", "").toLongOrNull()
+    fun lastCheckedAt(): Long? = Prefs.updateCheckedAt.get()
 
-    fun autoCheck() = Repo.getBool("updateAuto", true)
-    fun setAutoCheck(on: Boolean) = Repo.setBool("updateAuto", on)
+    fun autoCheck() = Prefs.updateAuto.get()
+    fun setAutoCheck(on: Boolean) = Prefs.updateAuto.set(on)
 
-    fun skip(release: Release) = Repo.setSetting("updateSkip", release.version)
+    fun skip(release: Release) = Prefs.updateSkip.set(release.version)
 
     /** Set right after an update installs, until the next check. */
     fun justInstalled(context: Context): String? =
-        Repo.getSetting("updateJustInstalled", "").takeIf { it.isNotEmpty() && it == installedVersion(context) }
+        Prefs.updateJustInstalled.get().takeIf { it.isNotEmpty() && it == installedVersion(context) }
 
     /** Run off the main thread at app start. */
     fun onAppStart(context: Context) {
@@ -124,10 +124,10 @@ object Updates {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         // A fresh process has no download in progress, so anything left over is stale.
         updatesDir(context).deleteRecursively()
-        val pending = Repo.getSetting("updateInstalling", "")
+        val pending = Prefs.updateInstalling.get()
         if (pending.isNotEmpty()) {
-            if (pending == installedVersion(context)) Repo.setSetting("updateJustInstalled", pending)
-            Repo.setSetting("updateInstalling", "")
+            if (pending == installedVersion(context)) Prefs.updateJustInstalled.set(pending)
+            Prefs.updateInstalling.set("")
         }
         val last = lastCheckedAt() ?: 0L
         val now = System.currentTimeMillis()
@@ -141,9 +141,9 @@ object Updates {
         } catch (e: Exception) {
             null
         } ?: return CheckResult.FAILED
-        Repo.setSetting("updateLatest", release.toJson())
-        Repo.setSetting("updateCheckedAt", System.currentTimeMillis().toString())
-        Repo.setSetting("updateJustInstalled", "")
+        Prefs.updateLatest.set(release.toJson())
+        Prefs.updateCheckedAt.set(System.currentTimeMillis())
+        Prefs.updateJustInstalled.set("")
         return if (isNewer(release.version, installedVersion(context))) CheckResult.NEWER else CheckResult.LATEST
     }
 
@@ -351,7 +351,7 @@ object Updates {
                             session.fsync(out)
                         }
                     }
-                    Repo.setSetting("updateInstalling", ready.release.version)
+                    Prefs.updateInstalling.set(ready.release.version)
                     // Android fills in the result, so the intent must be mutable; it's explicit and private to Memora.
                     val result = Intent(app, InstallReceiver::class.java).setPackage(app.packageName)
                     val pending = PendingIntent.getBroadcast(app, id, result, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
@@ -374,7 +374,7 @@ object Updates {
                 UpdateState.Failed(release, "Android couldn’t install this update over the Memora you have.", notGenuine = false)
             else -> UpdateState.Failed(release, "The update didn’t install. Try again.", notGenuine = false)
         }
-        if (_state.value !is UpdateState.Ready) Repo.setSetting("updateInstalling", "")
+        if (_state.value !is UpdateState.Ready) Prefs.updateInstalling.set("")
     }
 
     private fun notifyReady(context: Context, release: Release) {

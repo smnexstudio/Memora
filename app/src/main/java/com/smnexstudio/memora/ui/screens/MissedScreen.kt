@@ -1,5 +1,7 @@
 package com.smnexstudio.memora.ui.screens
 
+import com.smnexstudio.memora.ui.Route
+import com.smnexstudio.memora.ui.rememberAgenda
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,9 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -39,11 +38,10 @@ import com.smnexstudio.memora.ui.stampText
 import com.smnexstudio.memora.ui.theme
 
 @Composable
-fun MissedScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
+fun MissedScreen(onBack: () -> Unit, navigate: (Route) -> Unit) {
     val t = theme
     val c = t.c
-    val version by Repo.version.collectAsState()
-    val missed = remember(version) { missedEvents(Repo.listEvents()) }
+    val missed = rememberAgenda().missed
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Missed the post", onBack)
@@ -69,7 +67,7 @@ fun MissedScreen(onBack: () -> Unit, navigate: (String) -> Unit) {
                         }
                         Handwriting(fillMessage(Templates.belated(e.type), e, d), size = 23)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            PostButton("Send belated card", { navigate("approve/${e.id}?year=${d.year}&belated=true") }, Modifier.weight(1f), look = Look.STAMP, height = 44.dp)
+                            PostButton("Send belated card", { navigate(Route.Approve.late(e.id, d)) }, Modifier.weight(1f), look = Look.STAMP, height = 44.dp)
                             PostButton("Mark skipped", { Repo.markSent(e.id, d.year, "skipped", null) }, look = Look.OUTLINE, height = 44.dp)
                         }
                     }

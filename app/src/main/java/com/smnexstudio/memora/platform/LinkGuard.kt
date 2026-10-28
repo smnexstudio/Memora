@@ -1,7 +1,7 @@
 package com.smnexstudio.memora.platform
 
+import com.smnexstudio.memora.data.Prefs
 import android.content.Intent
-import com.smnexstudio.memora.data.Repo
 import java.security.SecureRandom
 
 /**
@@ -14,19 +14,26 @@ object LinkGuard {
 
     @Synchronized
     private fun token(): String {
-        val saved = Repo.getSetting("linkToken", "")
+        val saved = Prefs.linkToken.get()
         if (saved.isNotEmpty()) return saved
         val fresh = ByteArray(24).also(SecureRandom()::nextBytes).joinToString("") { "%02x".format(it) }
-        Repo.setSetting("linkToken", fresh)
+        Prefs.linkToken.set(fresh)
         return fresh
     }
 
     /** Marks an intent Memora builds itself, before it goes into a PendingIntent. */
     fun stamp(intent: Intent): Intent = intent.putExtra(EXTRA, token())
 
-    /** Drops the screen link from an intent that didn't come from Memora. Returns the same intent. */
+    /**
+     * Drops the screen link from an intent that didn't come from Memora. Returns the same intent.
+     *
+     * A kept link also loses FLAG_ACTIVITY_NEW_TASK. Navigation restarts the activity for a link with
+     * that flag, and the restarted intent no longer carries the token removed here, so the link would
+     * then be dropped and the app would open on Home instead of the screen the notification named.
+     */
     fun clean(intent: Intent): Intent {
         if (intent.data != null && intent.getStringExtra(EXTRA) != token()) intent.data = null
+        if (intent.data != null) intent.flags = intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK.inv()
         intent.removeExtra(EXTRA)
         return intent
     }

@@ -100,23 +100,66 @@ private class Helper(context: Context) : SQLiteOpenHelper(context, "memora.db", 
 
 /**
  * All of Memora's data: events, sent history and settings, in one SQLite database.
- * [version] ticks on every write so screens can re-read.
+ *
+ * Events and settings are also kept in memory, so reading them never touches the database;
+ * they are re-read only after a write. Each kind of data has its own stream, so a screen
+ * showing events doesn't reload when a setting changes:
+ * [events], [settings], [history] (sent cards and notes) and [festivalDates].
  */
 object Repo {
     private lateinit var helper: Helper
     private val db: SQLiteDatabase get() = helper.writableDatabase
 
-    private val _version = MutableStateFlow(0)
-    val version: StateFlow<Int> = _version
+    private val _events = MutableStateFlow<List<MemoraEvent>>(emptyList())
+    /** Every event, in no particular order. */
+    val events: StateFlow<List<MemoraEvent>> = _events
+
+    @Volatile
+    private var byId: Map<Long, MemoraEvent> = emptyMap()
+
+    private val _settings = MutableStateFlow<Map<String, String>>(emptyMap())
+    /** Every stored setting, raw. Read them through [Prefs]. */
+    val settings: StateFlow<Map<String, String>> = _settings
+
+    private val _history = MutableStateFlow(0)
+    /** Ticks when sent history or person notes change. */
+    val history: StateFlow<Int> = _history
+
+    private val _festivalDates = MutableStateFlow(0)
+    /** Ticks when the downloaded festival dates change. */
+    val festivalDates: StateFlow<Int> = _festivalDates
 
     @Synchronized
     fun init(context: Context) {
-        if (!::helper.isInitialized) helper = Helper(context.applicationContext)
+        if (::helper.isInitialized) return
+        helper = Helper(context.applicationContext)
+        refreshEvents()
+        refreshSettings()
     }
 
-    private fun changed() {
-        _version.update { it + 1 }
+    /** Tests only: opens [context]'s database in place of the last one, so each test starts from its own. */
+    @Synchronized
+    internal fun resetForTests(context: Context) {
+        helper = Helper(context.applicationContext)
+        refreshEvents()
+        refreshSettings()
     }
+
+    /** Re-reads the events after a write. Synchronized, so an older read can't land after a newer one. */
+    @Synchronized
+    private fun refreshEvents() {
+        val list = db.rawQuery("SELECT * FROM events", null).use { c -> buildList { while (c.moveToNext()) add(c.toEvent()) } }
+        byId = list.associateBy { it.id }
+        _events.value = list
+    }
+
+    @Synchronized
+    private fun refreshSettings() {
+        _settings.value = db.rawQuery("SELECT key, value FROM settings", null)
+            .use { c -> buildMap { while (c.moveToNext()) put(c.getString(0), c.getString(1)) } }
+    }
+
+    private fun historyChanged() = _history.update { it + 1 }
 
     // ---- Events ----
 
@@ -149,16 +192,12 @@ object Repo {
         sendVia = str("send_via"),
     )
 
-    fun listEvents(): List<MemoraEvent> =
-        db.rawQuery("SELECT * FROM events", null).use { c -> buildList { while (c.moveToNext()) add(c.toEvent()) } }
+    fun listEvents(): List<MemoraEvent> = _events.value
 
-    fun getEvent(id: Long): MemoraEvent? =
-        db.rawQuery("SELECT * FROM events WHERE id = ?", arrayOf(id.toString())).use { c -> if (c.moveToFirst()) c.toEvent() else null }
+    fun getEvent(id: Long): MemoraEvent? = byId[id]
 
     /** Contact keys already imported, so the import screen can skip them. */
-    fun importedContactIds(): Set<String> =
-        db.rawQuery("SELECT contact_id FROM events WHERE contact_id IS NOT NULL", null)
-            .use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+    fun importedContactIds(): Set<String> = _events.value.mapNotNullTo(mutableSetOf()) { it.contactId }
 
     /** Inserts when [id] is null, otherwise updates. Returns the event id. */
     fun saveEvent(e: MemoraEvent, id: Long? = null): Long {
@@ -175,7 +214,7 @@ object Repo {
         } else {
             db.insertOrThrow("events", null, v)
         }
-        changed()
+        refreshEvents()
         return result
     }
 
@@ -198,7 +237,7 @@ object Repo {
         } finally {
             db.endTransaction()
         }
-        changed()
+        refreshEvents()
     }
 
     fun deleteEvent(id: Long) {
@@ -211,7 +250,8 @@ object Repo {
         } finally {
             db.endTransaction()
         }
-        changed()
+        refreshEvents()
+        historyChanged()
     }
 
     /** Marks the year as handled and keeps a record of what was sent ("skipped" for skips). */
@@ -230,7 +270,8 @@ object Repo {
         } finally {
             db.endTransaction()
         }
-        changed()
+        refreshEvents()
+        historyChanged()
     }
 
     /** Newest first. */
@@ -275,61 +316,28 @@ object Repo {
             put("event_id", eventId); put("kind", kind.id); put("text", text); put("year", year)
             put("created_at", System.currentTimeMillis())
         })
-        changed()
+        historyChanged()
     }
 
     fun deleteNote(id: Long) {
         db.delete("person_notes", "id = ?", arrayOf(id.toString()))
-        changed()
+        historyChanged()
     }
 
-    // ---- Settings ----
+    // ---- Settings (typed in [Prefs]) ----
 
-    fun getSetting(key: String, fallback: String): String =
-        db.rawQuery("SELECT value FROM settings WHERE key = ?", arrayOf(key)).use { c -> if (c.moveToFirst()) c.getString(0) else fallback }
+    fun setting(key: String): String? = _settings.value[key]
 
-    fun setSetting(key: String, value: String) {
+    fun writeSetting(key: String, value: String) {
         db.insertWithOnConflict("settings", null, ContentValues().apply { put("key", key); put("value", value) }, SQLiteDatabase.CONFLICT_REPLACE)
-        changed()
+        _settings.update { it + (key to value) }
     }
-
-    fun getBool(key: String, fallback: Boolean) = getSetting(key, if (fallback) "1" else "0") == "1"
-    fun setBool(key: String, value: Boolean) = setSetting(key, if (value) "1" else "0")
-
-    fun reminderHour() = getSetting("reminderHour", "9").toIntOrNull()?.coerceIn(0, 23) ?: 9
-    fun reminderMinute() = getSetting("reminderMinute", "0").toIntOrNull()?.coerceIn(0, 59) ?: 0
-    fun defaultOffsets(): List<Int> = parseOffsets(getSetting("defaultOffsets", "[3,1]"))
-
-    /** Ids used before festivals came from Google, mapped to the ids made from Google's names. */
-    private val LEGACY_FESTIVAL_IDS = mapOf(
-        "newyear" to "new-years-day", "sankranti" to "makar-sankranti", "eid" to "ramzan-id",
-        "rakhi" to "raksha-bandhan", "ganesha" to "ganesh-chaturthi", "diwali" to "diwali-deepavali",
-    )
-
-    /** Festival ids the user wants reminders for (may include other countries' ids). */
-    fun festivals(): List<String> = try {
-        val a = JSONArray(getSetting("festivals", "[]"))
-        List(a.length()) { a.getString(it).let { id -> LEGACY_FESTIVAL_IDS[id] ?: id } }.distinct()
-    } catch (_: Exception) {
-        emptyList()
-    }
-
-    /** Holiday calendars whose festivals are shown (1 or 2 codes, e.g. "IN", "HINDU"). */
-    fun calendars(): List<String> =
-        getSetting("calendars", "IN").split(",").map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(2).ifEmpty { listOf("IN") }
-
-    fun setCalendars(codes: List<String>) = setSetting("calendars", codes.take(2).joinToString(","))
 
     /** Remembers how to send to this person, or forgets it with null. */
     fun setSendVia(id: Long, channel: String?) {
         db.update("events", ContentValues().apply { put("send_via", channel) }, "id = ?", arrayOf(id.toString()))
-        changed()
+        refreshEvents()
     }
-
-    /** How cards are signed, e.g. "SM"; blank for no sign-off. */
-    fun signature(): String = getSetting("signature", "")
-
-    fun setFestivals(ids: List<String>) = setSetting("festivals", JSONArray(ids).toString())
 
     // ---- Festivals (downloaded from Google Calendar) ----
 
@@ -343,9 +351,6 @@ object Repo {
             }
         }
 
-    /** Calendars the stored festivals came from ("IN,HINDU"), or "" if none are stored. */
-    fun festivalCalendars(): String = getSetting("festivalCalendars", "")
-
     /** Replaces every stored festival, dropping years and calendars no longer downloaded. */
     fun replaceFestivalRows(calendars: String, rows: List<FestivalRow>) {
         db.beginTransaction()
@@ -358,13 +363,29 @@ object Repo {
                 })
             }
             db.insertWithOnConflict("settings", null, ContentValues().apply {
-                put("key", "festivalCalendars"); put("value", calendars)
+                put("key", Prefs.festivalCalendars.key); put("value", calendars)
             }, SQLiteDatabase.CONFLICT_REPLACE)
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
         }
-        changed()
+        refreshSettings()
+        _festivalDates.update { it + 1 }
+    }
+
+    /** Deletes everything Memora stores in its database: events, history, notes, festivals and every setting. */
+    fun eraseAll() {
+        db.beginTransaction()
+        try {
+            for (table in listOf("history", "person_notes", "events", "festival_dates", "settings")) db.delete(table, null, null)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        refreshEvents()
+        refreshSettings()
+        historyChanged()
+        _festivalDates.update { it + 1 }
     }
 
     // ---- Backup (same JSON format as Memora 1.x, so old backups restore) ----
@@ -391,30 +412,15 @@ object Repo {
         val events = db.rawQuery("SELECT * FROM events", null).use { c -> JSONArray().apply { while (c.moveToNext()) put(c.toJson(EVENT_COLS)) } }
         val history = db.rawQuery("SELECT * FROM history", null).use { c -> JSONArray().apply { while (c.moveToNext()) put(c.toJson(HISTORY_COLS)) } }
         val notes = db.rawQuery("SELECT * FROM person_notes", null).use { c -> JSONArray().apply { while (c.moveToNext()) put(c.toJson(NOTE_COLS)) } }
-        // App lock stays on the device it was turned on for. Update checks are per phone too.
-        val settings = db.rawQuery("SELECT key, value FROM settings WHERE key NOT IN ('appLock', 'linkToken', 'appPinHash', 'appPinSalt', 'pinFails', 'pinLockUntil', 'festivalCalendars', 'festivalAttemptAt', 'festivalFetchedAt') AND (key NOT LIKE 'update%' OR key = 'updateAuto')", null).use { c ->
-            JSONArray().apply { while (c.moveToNext()) put(JSONObject().put("key", c.getString(0)).put("value", c.getString(1))) }
+        // App lock, the PIN, update checks and downloaded festivals stay on this phone (see [Prefs]).
+        val settings = JSONArray().apply {
+            _settings.value.filterKeys { it !in Prefs.deviceOnly }.forEach { (k, v) -> put(JSONObject().put("key", k).put("value", v)) }
         }
         return JSONObject()
             .put("app", "memora").put("version", 1).put("exportedAt", Instant.now().toString())
             .put("events", events).put("history", history).put("personNotes", notes).put("settings", settings)
             .toString(2)
     }
-
-    /** Settings a backup may restore, each with a check on its value. */
-    private val RESTORABLE: Map<String, (String) -> Boolean> = mapOf(
-        "reminderHour" to { v -> v.toIntOrNull()?.let { it in 0..23 } == true },
-        "reminderMinute" to { v -> v.toIntOrNull()?.let { it in 0..59 } == true },
-        "defaultOffsets" to { v -> Regex("""^\[\s*\d+(\s*,\s*\d+)?\s*]$""").matches(v) },
-        "weeklyDigest" to { v -> v == "0" || v == "1" },
-        "festivals" to { v -> Regex("""^\[("[a-z0-9-]+",?)*]$""").matches(v.replace(Regex("\\s"), "")) },
-        "calendars" to { v -> Regex("^[A-Z]+(,[A-Z]+)?$").matches(v) },
-        "festivalEarly" to { v -> v == "0" || v == "1" },
-        "signature" to { v -> v.length <= 40 },
-        "themeMode" to { v -> v in listOf("system", "light", "dark") },
-        "templateTone" to { v -> v in listOf("formal", "fun", "family") },
-        "updateAuto" to { v -> v == "0" || v == "1" },
-    )
 
     private fun JSONObject.optIntOrNull(key: String): Int? = if (isNull(key) || !has(key)) null else (opt(key) as? Number)?.toInt()
     private fun JSONObject.optStr(key: String): String? = if (isNull(key) || !has(key)) null else optString(key)
@@ -442,7 +448,7 @@ object Repo {
         val notes = root.optJSONArray("personNotes")?.let { a -> List(a.length()) { a.optJSONObject(it) } }.orEmpty()
             .filterNotNull().filter { it.optLong("event_id", -1) in ids && !it.optStr("text").isNullOrBlank() }
         val settings = root.optJSONArray("settings")?.let { a -> List(a.length()) { a.optJSONObject(it) } }.orEmpty()
-            .filterNotNull().filter { s -> RESTORABLE[s.optString("key")]?.invoke(s.optString("value")) == true }
+            .filterNotNull().filter { s -> Prefs.restorable[s.optString("key")]?.accepts(s.optString("value")) == true }
 
         db.beginTransaction()
         try {
@@ -486,7 +492,9 @@ object Repo {
         } finally {
             db.endTransaction()
         }
-        changed()
+        refreshEvents()
+        refreshSettings()
+        historyChanged()
         return events.size
     }
 }

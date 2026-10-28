@@ -28,7 +28,13 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -55,22 +61,33 @@ import androidx.compose.ui.unit.sp
 
 // ---- Drawing helpers ----
 
-/** A dashed outline, like a stamp's perforation or a cut-here line. */
-fun Modifier.dashedBorder(color: Color, width: Dp = 1.5.dp, dash: Dp = 5.dp, gap: Dp = 3.dp, radius: Dp = 0.dp) = drawBehind {
-    val w = width.toPx()
-    drawRoundRect(
-        color = color,
-        topLeft = Offset(w / 2, w / 2),
-        size = Size(size.width - w, size.height - w),
-        cornerRadius = CornerRadius(radius.toPx()),
-        style = Stroke(width = w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash.toPx(), gap.toPx()))),
-    )
+/** A dashed outline, like a stamp's perforation or a cut-here line. The board draws it as a solid rule with rounded corners. */
+fun Modifier.dashedBorder(color: Color, width: Dp = 1.5.dp, dash: Dp = 5.dp, gap: Dp = 3.dp, radius: Dp = 0.dp) = composed {
+    val board = LocalMemora.current.board
+    drawBehind {
+        val w = (if (board) minOf(width, 1.5.dp) else width).toPx()
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(w / 2, w / 2),
+            size = Size(size.width - w, size.height - w),
+            cornerRadius = CornerRadius((if (board) maxOf(radius, 6.dp) else radius).toPx()),
+            style = Stroke(width = w, pathEffect = if (board) null else PathEffect.dashPathEffect(floatArrayOf(dash.toPx(), gap.toPx()))),
+        )
+    }
 }
 
-/** Paper on the ground: a hard 2dp shadow under the card. */
-fun Modifier.paper(fill: Color, shadow: Color) = drawBehind {
-    drawRect(shadow, topLeft = Offset(0f, 2.dp.toPx()), size = size)
-    drawRect(fill)
+/** Paper on the ground: a hard 2dp shadow under the card. On the board, a flat rounded panel with a hairline edge. */
+fun Modifier.paper(fill: Color, shadow: Color) = composed {
+    val t = LocalMemora.current
+    if (t.board) {
+        val shape = RoundedCornerShape(10.dp)
+        Modifier.clip(shape).background(fill).border(1.dp, t.c.line, shape)
+    } else {
+        Modifier.drawBehind {
+            drawRect(shadow, topLeft = Offset(0f, 2.dp.toPx()), size = size)
+            drawRect(fill)
+        }
+    }
 }
 
 /** Ruled lines every [lineHeight], for handwritten text. */
@@ -95,11 +112,12 @@ fun PaperCard(
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val c = theme.c
+    val t = theme
+    val c = t.c
     Column(
         modifier
             .fillMaxWidth()
-            .rotate(tilt)
+            .rotate(if (t.board) 0f else tilt)
             .paper(fill ?: c.paper, c.shadow)
             .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .padding(padding),
@@ -120,6 +138,7 @@ fun Stamp(
     fontSize: Int = 18,
     caption: String? = null,
 ) {
+    if (theme.board) return FlapTile(text, color, modifier, filled, width, height, fontSize, caption)
     val c = theme.c
     Box(
         modifier.size(width, height).dashedBorder(color, if (filled) 2.dp else 1.5.dp).padding(if (filled) 3.dp else 0.dp),
@@ -131,7 +150,7 @@ fun Stamp(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text, fontFamily = Fraunces, fontWeight = FontWeight.ExtraBold, fontSize = fontSize.sp, lineHeight = fontSize.sp,
+                text, fontFamily = DisplayFont, fontWeight = FontWeight.ExtraBold, fontSize = fontSize.sp, lineHeight = fontSize.sp,
                 color = if (filled) c.onStamp else color, maxLines = 1, textAlign = TextAlign.Center,
             )
             if (caption != null) Text(caption, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, color = if (filled) c.onStamp else color, lineHeight = 12.sp)
@@ -139,10 +158,37 @@ fun Stamp(
     }
 }
 
-/** A tilted rubber-stamp mark: "Sent", "Allowed", "Fix", "May shift by a day". */
+/** The board's stamp: a split-flap tile with the seam across its middle. */
+@Composable
+private fun FlapTile(text: String, color: Color, modifier: Modifier, filled: Boolean, width: Dp, height: Dp, fontSize: Int, caption: String?) {
+    val t = theme
+    val c = t.c
+    val shape = RoundedCornerShape(6.dp)
+    val fg = if (filled) c.onStamp else color
+    val seam = Color.Black.copy(alpha = if (t.dark) 0.45f else 0.12f)
+    Box(
+        modifier.size(width, height).clip(shape).background(if (filled) color else c.paperAlt).border(1.dp, if (filled) color else c.line, shape)
+            .drawBehind { drawLine(seam, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), 1.dp.toPx()) },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Text(
+                text, fontFamily = t.display, fontWeight = FontWeight.ExtraBold, fontSize = (fontSize + 1).sp, lineHeight = (fontSize + 1).sp,
+                color = fg, maxLines = 1, textAlign = TextAlign.Center,
+            )
+            if (caption != null) Text(caption.uppercase(), fontFamily = MonoFont, fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, color = fg, lineHeight = 10.sp)
+        }
+    }
+}
+
+/** A tilted rubber-stamp mark: "Sent", "Allowed", "Fix", "May shift by a day". The board sets it level, in mono capitals. */
 @Composable
 fun RubberStamp(text: String, color: Color, modifier: Modifier = Modifier, tilt: Float = -6f, fontSize: Int = 12) {
-    Text(
+    if (theme.board) Text(
+        text.uppercase(),
+        modifier.border(1.5.dp, color, RoundedCornerShape(5.dp)).padding(horizontal = 7.dp, vertical = 2.dp),
+        fontFamily = MonoFont, fontSize = (fontSize - 1).sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = color,
+    ) else Text(
         text,
         modifier.rotate(tilt).border(2.dp, color).padding(horizontal = 8.dp, vertical = 2.dp),
         fontSize = fontSize.sp, fontWeight = FontWeight.Bold, color = color,
@@ -176,13 +222,15 @@ fun PostButton(
     stacked: Boolean = false,
     fontSize: Int = 15,
 ) {
-    val c = theme.c
+    val t = theme
+    val c = t.c
     val (bg, fg) = when (look) {
-        Look.INK -> c.ink to c.onInk
+        // The board's main action is its amber signal.
+        Look.INK -> if (t.board) c.stamp to c.onStamp else c.ink to c.onInk
         Look.STAMP -> c.stamp to c.onStamp
         Look.OUTLINE, Look.GHOST -> Color.Transparent to c.ink
     }
-    val shape = RoundedCornerShape(4.dp)
+    val shape = RoundedCornerShape(if (t.board) 8.dp else 4.dp)
     val alpha = if (enabled) 1f else 0.45f
     val content: @Composable () -> Unit = {
         if (icon != null) LineIcon(icon, fg.copy(alpha = alpha), size = 20)
@@ -240,22 +288,25 @@ fun ToggleChip(
     enabled: Boolean = true,
     height: Dp = 38.dp,
 ) {
-    val c = theme.c
-    val shape = RoundedCornerShape(4.dp)
+    val t = theme
+    val c = t.c
+    val shape = RoundedCornerShape(if (t.board) 8.dp else 4.dp)
+    // Selected chips fill with ink on postcards, with the amber signal on the board.
+    val (on, onFg) = if (t.board) c.stamp to c.onStamp else c.ink to c.onInk
     Row(
         modifier
             .heightIn(min = height)
             .clip(shape)
-            .background(if (selected) c.ink else Color.Transparent)
-            .border(1.5.dp, if (enabled) c.ink else c.faint, shape)
+            .background(if (selected) on else Color.Transparent)
+            .border(1.5.dp, if (selected) on else if (enabled) c.ink else c.faint, shape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { this.selected = selected }
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
     ) {
-        if (dot != null) Dot(if (selected) c.onInk else dot, 8)
-        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected) c.onInk else if (enabled) c.ink else c.faint, maxLines = 1)
+        if (dot != null) Dot(if (selected) onFg else dot, 8)
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected) onFg else if (enabled) c.ink else c.faint, maxLines = 1)
     }
 }
 
@@ -274,9 +325,11 @@ fun ScreenHeader(title: String, onBack: (() -> Unit)?, close: Boolean = false, a
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) IconTap(if (close) Ic.CLOSE else Ic.BACK, if (close) "Close" else "Back", onBack)
+        val board = theme.board
         Text(
-            title, Modifier.weight(1f).padding(start = if (onBack == null) 16.dp else 4.dp),
-            fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 24.sp,
+            if (board) title.uppercase() else title, Modifier.weight(1f).padding(start = if (onBack == null) 16.dp else 4.dp),
+            fontFamily = DisplayFont, fontStyle = if (board) FontStyle.Normal else FontStyle.Italic,
+            fontWeight = if (board) FontWeight.Black else FontWeight.ExtraBold, fontSize = if (board) 21.sp else 24.sp,
             color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
         action?.invoke()
@@ -286,36 +339,54 @@ fun ScreenHeader(title: String, onBack: (() -> Unit)?, close: Boolean = false, a
 /** Big italic title of a main tab, with an optional line above or below. */
 @Composable
 fun TabTitle(title: String, modifier: Modifier = Modifier, above: String? = null, below: String? = null) {
-    val c = theme.c
+    val t = theme
+    val c = t.c
+    // The board's header reads like the top of a departures board: a mono dateline over capitals.
+    val line: @Composable (String) -> Unit = {
+        if (t.board) Text(it.uppercase(), fontFamily = MonoFont, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, color = c.ok)
+        else Text(it, fontSize = 14.sp, color = c.muted)
+    }
     Column(modifier) {
-        above?.let { Text(it, fontSize = 14.sp, color = c.muted) }
-        Text(title, fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, color = c.ink, lineHeight = 36.sp)
-        below?.let { Text(it, fontSize = 14.sp, color = c.muted) }
+        above?.let { line(it) }
+        if (t.board) Text(title.uppercase(), fontFamily = DisplayFont, fontWeight = FontWeight.Black, fontSize = 30.sp, letterSpacing = 0.5.sp, color = c.ink, lineHeight = 36.sp)
+        else Text(title, fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.ExtraBold, fontSize = 30.sp, color = c.ink, lineHeight = 36.sp)
+        below?.let { line(it) }
     }
 }
 
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier, italic: Boolean = true, size: Int = 18) {
-    Text(
-        text, modifier, fontFamily = Fraunces, fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
+    // On the board, section names are small mono labels, like a timetable's column heads.
+    if (theme.board) Text(
+        text.uppercase(), modifier, fontFamily = MonoFont, fontWeight = FontWeight.Bold,
+        fontSize = (size * 0.68f).sp, letterSpacing = 1.5.sp, color = theme.c.muted,
+    ) else Text(
+        text, modifier, fontFamily = DisplayFont, fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
         fontWeight = FontWeight.SemiBold, fontSize = size.sp, color = theme.c.ink,
     )
 }
 
 @Composable
 fun Handwriting(text: String, modifier: Modifier = Modifier, size: Int = 23, color: Color? = null, bold: Boolean = false, lineHeight: Int? = null) {
+    val t = theme
+    // Mono needs more leading than Caveat to stay readable over several lines.
+    val lh = if (t.board) (lineHeight ?: size) * t.handScale * 1.3f else (lineHeight ?: (size * 1.15f).toInt()).toFloat()
     Text(
-        text, modifier, fontFamily = Caveat, fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
-        fontSize = size.sp, lineHeight = (lineHeight ?: (size * 1.15f).toInt()).sp, color = color ?: theme.c.ink,
+        text, modifier, fontFamily = HandFont, fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium,
+        fontSize = (size * t.handScale).sp, lineHeight = lh.sp, color = color ?: t.c.ink,
     )
 }
 
 @Composable
 fun DashedDivider(modifier: Modifier = Modifier) {
     val color = theme.c.line
+    val board = theme.board
     Box(
         modifier.fillMaxWidth().height(1.dp).drawBehind {
-            drawLine(color, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
+            drawLine(
+                color, Offset(0f, 0f), Offset(size.width, 0f), strokeWidth = 1.dp.toPx(),
+                pathEffect = if (board) null else PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())),
+            )
         },
     )
 }
@@ -332,7 +403,7 @@ fun initials(name: String): String =
 
 // ---- Inputs ----
 
-/** Label in italic serif, text on an underline. [handwritten] uses the Caveat hand. */
+/** Label in italic serif, text on an underline. [handwritten] uses the handwriting face. */
 @Composable
 fun UnderlineField(
     label: String,
@@ -345,9 +416,33 @@ fun UnderlineField(
     strong: Boolean = false,
 ) {
     val c = theme.c
+    if (theme.board) {
+        // The board's field: a rounded box, the label as a small amber mono head inside it.
+        var focused by remember { mutableStateOf(false) }
+        val shape = RoundedCornerShape(10.dp)
+        val style = TextStyle(fontFamily = if (handwritten) MonoFont else WorkSans, fontSize = 16.sp, fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal, color = c.ink)
+        Column(
+            modifier.fillMaxWidth().clip(shape).background(c.paper).border(1.5.dp, if (focused) c.stamp else c.line, shape).padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Mono(label, color = c.stamp, size = 10, bold = true, spacing = 1f)
+            BasicTextField(
+                value = value, onValueChange = onChange, singleLine = true, textStyle = style, cursorBrush = SolidColor(c.stamp),
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 28.dp).onFocusChanged { focused = it.isFocused }.semantics { contentDescription = label },
+                decorationBox = { inner ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (value.isEmpty()) Text(placeholder, style = style.copy(color = c.faint))
+                        inner()
+                    }
+                },
+            )
+        }
+        return
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
-        val style = if (handwritten) TextStyle(fontFamily = Caveat, fontWeight = FontWeight.Medium, fontSize = 28.sp, color = c.ink)
+        Text(label, fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
+        val style = if (handwritten) TextStyle(fontFamily = HandFont, fontWeight = FontWeight.Medium, fontSize = (28 * theme.handScale).sp, color = c.ink)
         else TextStyle(fontFamily = WorkSans, fontSize = 16.sp, fontWeight = if (strong) FontWeight.SemiBold else FontWeight.Normal, color = c.ink)
         val underline = if (strong || handwritten) c.ink else c.faint
         val thickness = if (strong || handwritten) 2.dp else 1.5.dp
@@ -372,8 +467,22 @@ fun UnderlineField(
 @Composable
 fun UnderlinePicker(label: String, value: String, onClick: () -> Unit, modifier: Modifier = Modifier, placeholder: Boolean = false) {
     val c = theme.c
+    if (theme.board) {
+        val shape = RoundedCornerShape(10.dp)
+        Column(
+            modifier.fillMaxWidth().clip(shape).background(c.paper).border(1.5.dp, c.line, shape)
+                .clickable(role = Role.Button, onClick = onClick).padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Mono(label, color = c.stamp, size = 10, bold = true, spacing = 1f)
+            Box(Modifier.heightIn(min = 28.dp), contentAlignment = Alignment.CenterStart) {
+                Text(value, fontFamily = DisplayFont, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = if (placeholder) c.faint else c.ink)
+            }
+        }
+        return
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(label, fontFamily = Fraunces, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
+        Text(label, fontFamily = DisplayFont, fontStyle = FontStyle.Italic, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = c.ink)
         Box(
             Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button, onClick = onClick)
                 .drawBehind { drawLine(c.ink, Offset(0f, size.height - 1.dp.toPx()), Offset(size.width, size.height - 1.dp.toPx()), 2.dp.toPx()) }
@@ -397,7 +506,7 @@ fun LinedField(
     color: Color? = null,
 ) {
     val c = theme.c
-    val style = TextStyle(fontFamily = Caveat, fontWeight = FontWeight.Medium, fontSize = fontSize.sp, lineHeight = lineHeight.sp, color = color ?: c.ink)
+    val style = TextStyle(fontFamily = HandFont, fontWeight = FontWeight.Medium, fontSize = (fontSize * theme.handScale).sp, lineHeight = lineHeight.sp, color = color ?: c.ink)
     BasicTextField(
         value = value, onValueChange = onChange, textStyle = style, cursorBrush = SolidColor(c.stamp), minLines = minLines,
         modifier = modifier.fillMaxWidth().ruled(c.rule, lineHeight.dp).semantics { contentDescription = label },
@@ -448,11 +557,13 @@ fun BoxField(
 
 @Composable
 fun PaperSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    val c = theme.c
+    val t = theme
+    val c = t.c
     Switch(
         checked, onChange, enabled = enabled,
         colors = SwitchDefaults.colors(
-            checkedTrackColor = c.ink, checkedThumbColor = c.onInk, uncheckedTrackColor = c.paperAlt,
+            checkedTrackColor = if (t.board) c.stamp else c.ink, checkedThumbColor = if (t.board) c.onStamp else c.onInk,
+            uncheckedTrackColor = c.paperAlt,
             uncheckedBorderColor = c.faint, uncheckedThumbColor = c.faint,
         ),
     )

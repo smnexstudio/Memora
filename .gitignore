@@ -39,9 +39,12 @@ mapping.txt
 release/
 # APK signature files that adb install and apksigner leave next to an APK
 *.idsig
-# Checksums and notes the release workflow makes; GitHub keeps the published ones
+# Checksums, SBOMs and notes the release workflow makes; GitHub keeps the published ones
 *.sha256
+*.cdx.json
 /notes.md
+# The dependency report's output when run locally (.github/scripts/dependency_report.py)
+/report.md
 
 # ---- Logs, crash dumps, profiling ----
 *.log
@@ -80,3 +83,6 @@ $RECYCLE.BIN/
 
 # ---- Generated demo data (dates are relative to the day it was made) ----
 docs/demo/memora-demo-backup.json
+
+# ---- Design tooling (local only) ----
+PRODUCT.md
