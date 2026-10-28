@@ -4,6 +4,8 @@ All notable changes to Memora are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-29
+
 ### Look and feel
 
 - A second theme, Departures: the app as a station board, with split-flap date tiles, condensed capitals and mono times, in light and dark. Choose it in Settings → Appearance → Theme; Postcard stays the default.

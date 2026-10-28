@@ -36,6 +36,9 @@ full text in licenses/OFL-1.1.txt:
   - JetBrains Mono
                Copyright 2020 The JetBrains Mono Project Authors
                https://github.com/JetBrains/JetBrainsMono
+  - Great Vibes
+               Copyright 2012 The Great Vibes Project Authors
+               https://github.com/googlefonts/great-vibes
 
 Libraries, Apache License 2.0, full text in licenses/Apache-2.0.txt:
   - Android Jetpack (AndroidX): Compose UI, Foundation, Material 3,

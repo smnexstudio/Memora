@@ -20,8 +20,8 @@ android {
         minSdk = 33
         targetSdk = 36
         // CI passes these from the release tag (see .github/workflows/release.yml).
-        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 10000
-        versionName = (findProperty("versionName") as String?) ?: "1.0.0"
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 10100
+        versionName = (findProperty("versionName") as String?) ?: "1.1.0"
         manifestPlaceholders["appLabel"] = "Memora"
     }
 
